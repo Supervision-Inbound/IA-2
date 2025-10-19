@@ -1,607 +1,607 @@
 [
   {
     "fecha":"2025-07-27",
-    "llamadas_totales_dia":25,
+    "llamadas_totales_dia":36,
     "tmo_promedio_diario":0.0
   },
   {
     "fecha":"2025-07-28",
-    "llamadas_totales_dia":1447,
-    "tmo_promedio_diario":223.1336941604
+    "llamadas_totales_dia":1176,
+    "tmo_promedio_diario":239.5033957462
   },
   {
     "fecha":"2025-07-29",
-    "llamadas_totales_dia":1473,
-    "tmo_promedio_diario":214.2511356865
+    "llamadas_totales_dia":1261,
+    "tmo_promedio_diario":249.9429815429
   },
   {
     "fecha":"2025-07-30",
-    "llamadas_totales_dia":1500,
-    "tmo_promedio_diario":216.2230561608
+    "llamadas_totales_dia":1312,
+    "tmo_promedio_diario":250.0241338522
   },
   {
     "fecha":"2025-07-31",
-    "llamadas_totales_dia":1375,
-    "tmo_promedio_diario":216.3332176383
+    "llamadas_totales_dia":1235,
+    "tmo_promedio_diario":249.1588522558
   },
   {
     "fecha":"2025-08-01",
-    "llamadas_totales_dia":1018,
-    "tmo_promedio_diario":216.6935602844
+    "llamadas_totales_dia":1056,
+    "tmo_promedio_diario":248.660335522
   },
   {
     "fecha":"2025-08-02",
-    "llamadas_totales_dia":830,
-    "tmo_promedio_diario":215.3627912386
+    "llamadas_totales_dia":880,
+    "tmo_promedio_diario":248.0274989344
   },
   {
     "fecha":"2025-08-03",
-    "llamadas_totales_dia":652,
-    "tmo_promedio_diario":218.4105690257
+    "llamadas_totales_dia":694,
+    "tmo_promedio_diario":245.4534803916
   },
   {
     "fecha":"2025-08-04",
-    "llamadas_totales_dia":1232,
-    "tmo_promedio_diario":215.9260274323
+    "llamadas_totales_dia":1104,
+    "tmo_promedio_diario":251.4264247386
   },
   {
     "fecha":"2025-08-05",
-    "llamadas_totales_dia":1357,
-    "tmo_promedio_diario":217.5067391869
+    "llamadas_totales_dia":1155,
+    "tmo_promedio_diario":253.5096479723
   },
   {
     "fecha":"2025-08-06",
-    "llamadas_totales_dia":1342,
-    "tmo_promedio_diario":218.912005584
+    "llamadas_totales_dia":1186,
+    "tmo_promedio_diario":253.8184640426
   },
   {
     "fecha":"2025-08-07",
-    "llamadas_totales_dia":1232,
-    "tmo_promedio_diario":218.9888984959
+    "llamadas_totales_dia":1117,
+    "tmo_promedio_diario":251.9815351916
   },
   {
     "fecha":"2025-08-08",
-    "llamadas_totales_dia":956,
-    "tmo_promedio_diario":220.9614213524
+    "llamadas_totales_dia":1059,
+    "tmo_promedio_diario":250.6528560876
   },
   {
     "fecha":"2025-08-09",
-    "llamadas_totales_dia":739,
-    "tmo_promedio_diario":220.3720053451
+    "llamadas_totales_dia":904,
+    "tmo_promedio_diario":249.3270373329
   },
   {
     "fecha":"2025-08-10",
-    "llamadas_totales_dia":681,
-    "tmo_promedio_diario":221.2837049061
+    "llamadas_totales_dia":742,
+    "tmo_promedio_diario":247.060919786
   },
   {
     "fecha":"2025-08-11",
-    "llamadas_totales_dia":1208,
-    "tmo_promedio_diario":218.3331765269
+    "llamadas_totales_dia":1162,
+    "tmo_promedio_diario":252.0742568245
   },
   {
     "fecha":"2025-08-12",
-    "llamadas_totales_dia":1367,
-    "tmo_promedio_diario":219.207405103
+    "llamadas_totales_dia":1187,
+    "tmo_promedio_diario":254.3168198742
   },
   {
     "fecha":"2025-08-13",
-    "llamadas_totales_dia":1318,
-    "tmo_promedio_diario":220.8246259968
+    "llamadas_totales_dia":1203,
+    "tmo_promedio_diario":254.8668513157
   },
   {
     "fecha":"2025-08-14",
-    "llamadas_totales_dia":1220,
-    "tmo_promedio_diario":220.9298113153
+    "llamadas_totales_dia":1134,
+    "tmo_promedio_diario":253.2957341889
   },
   {
     "fecha":"2025-08-15",
-    "llamadas_totales_dia":787,
-    "tmo_promedio_diario":219.6208712394
+    "llamadas_totales_dia":745,
+    "tmo_promedio_diario":245.9802857035
   },
   {
     "fecha":"2025-08-16",
-    "llamadas_totales_dia":812,
-    "tmo_promedio_diario":212.7599213334
+    "llamadas_totales_dia":886,
+    "tmo_promedio_diario":246.1964692896
   },
   {
     "fecha":"2025-08-17",
-    "llamadas_totales_dia":668,
-    "tmo_promedio_diario":216.0284384731
+    "llamadas_totales_dia":714,
+    "tmo_promedio_diario":244.902852418
   },
   {
     "fecha":"2025-08-18",
-    "llamadas_totales_dia":1176,
-    "tmo_promedio_diario":212.9470985963
+    "llamadas_totales_dia":1079,
+    "tmo_promedio_diario":249.2702657459
   },
   {
     "fecha":"2025-08-19",
-    "llamadas_totales_dia":1283,
-    "tmo_promedio_diario":214.0323729419
+    "llamadas_totales_dia":1096,
+    "tmo_promedio_diario":251.4535270262
   },
   {
     "fecha":"2025-08-20",
-    "llamadas_totales_dia":1253,
-    "tmo_promedio_diario":215.3110708724
+    "llamadas_totales_dia":1161,
+    "tmo_promedio_diario":251.8774671726
   },
   {
     "fecha":"2025-08-21",
-    "llamadas_totales_dia":1165,
-    "tmo_promedio_diario":215.1394939884
+    "llamadas_totales_dia":1096,
+    "tmo_promedio_diario":250.3115156215
   },
   {
     "fecha":"2025-08-22",
-    "llamadas_totales_dia":880,
-    "tmo_promedio_diario":219.6538988565
+    "llamadas_totales_dia":979,
+    "tmo_promedio_diario":249.3878477236
   },
   {
     "fecha":"2025-08-23",
-    "llamadas_totales_dia":702,
-    "tmo_promedio_diario":218.4653658024
+    "llamadas_totales_dia":835,
+    "tmo_promedio_diario":248.7587772154
   },
   {
     "fecha":"2025-08-24",
-    "llamadas_totales_dia":602,
-    "tmo_promedio_diario":217.9892400371
+    "llamadas_totales_dia":695,
+    "tmo_promedio_diario":247.2380630339
   },
   {
     "fecha":"2025-08-25",
-    "llamadas_totales_dia":1182,
-    "tmo_promedio_diario":217.177202638
+    "llamadas_totales_dia":1083,
+    "tmo_promedio_diario":251.5822137991
   },
   {
     "fecha":"2025-08-26",
-    "llamadas_totales_dia":1317,
-    "tmo_promedio_diario":217.8435468359
+    "llamadas_totales_dia":1122,
+    "tmo_promedio_diario":253.0695197286
   },
   {
     "fecha":"2025-08-27",
-    "llamadas_totales_dia":1296,
-    "tmo_promedio_diario":219.5632326763
+    "llamadas_totales_dia":1194,
+    "tmo_promedio_diario":252.9958453208
   },
   {
     "fecha":"2025-08-28",
-    "llamadas_totales_dia":1220,
-    "tmo_promedio_diario":220.1168429837
+    "llamadas_totales_dia":1098,
+    "tmo_promedio_diario":251.3757348889
   },
   {
     "fecha":"2025-08-29",
-    "llamadas_totales_dia":1123,
-    "tmo_promedio_diario":217.7464419266
+    "llamadas_totales_dia":1036,
+    "tmo_promedio_diario":249.9918430964
   },
   {
     "fecha":"2025-08-30",
-    "llamadas_totales_dia":875,
-    "tmo_promedio_diario":216.8131468469
+    "llamadas_totales_dia":969,
+    "tmo_promedio_diario":248.6386789092
   },
   {
     "fecha":"2025-08-31",
-    "llamadas_totales_dia":885,
-    "tmo_promedio_diario":217.303208014
+    "llamadas_totales_dia":859,
+    "tmo_promedio_diario":246.0539412382
   },
   {
     "fecha":"2025-09-01",
-    "llamadas_totales_dia":1419,
-    "tmo_promedio_diario":220.1506223626
+    "llamadas_totales_dia":1081,
+    "tmo_promedio_diario":248.7893480934
   },
   {
     "fecha":"2025-09-02",
-    "llamadas_totales_dia":1341,
-    "tmo_promedio_diario":221.7829535848
+    "llamadas_totales_dia":1080,
+    "tmo_promedio_diario":250.7212325848
   },
   {
     "fecha":"2025-09-03",
-    "llamadas_totales_dia":1261,
-    "tmo_promedio_diario":226.6077063122
+    "llamadas_totales_dia":1055,
+    "tmo_promedio_diario":251.472880945
   },
   {
     "fecha":"2025-09-04",
-    "llamadas_totales_dia":1156,
-    "tmo_promedio_diario":226.8449447148
+    "llamadas_totales_dia":1031,
+    "tmo_promedio_diario":249.5621155946
   },
   {
     "fecha":"2025-09-05",
-    "llamadas_totales_dia":954,
-    "tmo_promedio_diario":226.9731110567
+    "llamadas_totales_dia":897,
+    "tmo_promedio_diario":247.1575233996
   },
   {
     "fecha":"2025-09-06",
-    "llamadas_totales_dia":714,
-    "tmo_promedio_diario":226.4256734589
+    "llamadas_totales_dia":815,
+    "tmo_promedio_diario":246.5230950824
   },
   {
     "fecha":"2025-09-07",
-    "llamadas_totales_dia":555,
-    "tmo_promedio_diario":226.4704409256
+    "llamadas_totales_dia":732,
+    "tmo_promedio_diario":245.4445224181
   },
   {
     "fecha":"2025-09-08",
-    "llamadas_totales_dia":1190,
-    "tmo_promedio_diario":224.9611764252
+    "llamadas_totales_dia":1051,
+    "tmo_promedio_diario":250.5035904698
   },
   {
     "fecha":"2025-09-09",
-    "llamadas_totales_dia":1285,
-    "tmo_promedio_diario":225.7570572458
+    "llamadas_totales_dia":1005,
+    "tmo_promedio_diario":252.0888122631
   },
   {
     "fecha":"2025-09-10",
-    "llamadas_totales_dia":1255,
-    "tmo_promedio_diario":227.2945268742
+    "llamadas_totales_dia":1065,
+    "tmo_promedio_diario":251.6507567859
   },
   {
     "fecha":"2025-09-11",
-    "llamadas_totales_dia":1187,
-    "tmo_promedio_diario":227.8106318726
+    "llamadas_totales_dia":1041,
+    "tmo_promedio_diario":249.3192726987
   },
   {
     "fecha":"2025-09-12",
-    "llamadas_totales_dia":990,
-    "tmo_promedio_diario":227.9523164547
+    "llamadas_totales_dia":882,
+    "tmo_promedio_diario":247.1182460275
   },
   {
     "fecha":"2025-09-13",
-    "llamadas_totales_dia":714,
-    "tmo_promedio_diario":227.2901432263
+    "llamadas_totales_dia":780,
+    "tmo_promedio_diario":246.6139134302
   },
   {
     "fecha":"2025-09-14",
-    "llamadas_totales_dia":580,
-    "tmo_promedio_diario":227.2443735085
+    "llamadas_totales_dia":710,
+    "tmo_promedio_diario":246.4343232029
   },
   {
     "fecha":"2025-09-15",
-    "llamadas_totales_dia":1158,
-    "tmo_promedio_diario":216.8083384854
+    "llamadas_totales_dia":1019,
+    "tmo_promedio_diario":247.9561567185
   },
   {
     "fecha":"2025-09-16",
-    "llamadas_totales_dia":1218,
-    "tmo_promedio_diario":217.5646648155
+    "llamadas_totales_dia":1040,
+    "tmo_promedio_diario":249.6979557424
   },
   {
     "fecha":"2025-09-17",
-    "llamadas_totales_dia":1148,
-    "tmo_promedio_diario":222.3432803194
+    "llamadas_totales_dia":1009,
+    "tmo_promedio_diario":248.8011354943
   },
   {
     "fecha":"2025-09-18",
-    "llamadas_totales_dia":625,
-    "tmo_promedio_diario":223.892672591
+    "llamadas_totales_dia":977,
+    "tmo_promedio_diario":236.6866651473
   },
   {
     "fecha":"2025-09-19",
-    "llamadas_totales_dia":810,
-    "tmo_promedio_diario":226.7631406645
+    "llamadas_totales_dia":877,
+    "tmo_promedio_diario":237.786062424
   },
   {
     "fecha":"2025-09-20",
-    "llamadas_totales_dia":721,
-    "tmo_promedio_diario":222.2638832639
+    "llamadas_totales_dia":725,
+    "tmo_promedio_diario":243.0429706247
   },
   {
     "fecha":"2025-09-21",
-    "llamadas_totales_dia":590,
-    "tmo_promedio_diario":223.2537614304
+    "llamadas_totales_dia":707,
+    "tmo_promedio_diario":242.0162592895
   },
   {
     "fecha":"2025-09-22",
-    "llamadas_totales_dia":1133,
-    "tmo_promedio_diario":223.7683646911
+    "llamadas_totales_dia":983,
+    "tmo_promedio_diario":249.5117921823
   },
   {
     "fecha":"2025-09-23",
-    "llamadas_totales_dia":1238,
-    "tmo_promedio_diario":224.4648028087
+    "llamadas_totales_dia":1005,
+    "tmo_promedio_diario":250.8784605956
   },
   {
     "fecha":"2025-09-24",
-    "llamadas_totales_dia":1221,
-    "tmo_promedio_diario":225.9081946295
+    "llamadas_totales_dia":1091,
+    "tmo_promedio_diario":251.2257917219
   },
   {
     "fecha":"2025-09-25",
-    "llamadas_totales_dia":1161,
-    "tmo_promedio_diario":226.4605802151
+    "llamadas_totales_dia":1019,
+    "tmo_promedio_diario":249.8968850661
   },
   {
     "fecha":"2025-09-26",
-    "llamadas_totales_dia":1000,
-    "tmo_promedio_diario":226.2183929928
+    "llamadas_totales_dia":915,
+    "tmo_promedio_diario":248.1461793449
   },
   {
     "fecha":"2025-09-27",
-    "llamadas_totales_dia":680,
-    "tmo_promedio_diario":225.7080940742
+    "llamadas_totales_dia":758,
+    "tmo_promedio_diario":248.0783260163
   },
   {
     "fecha":"2025-09-28",
-    "llamadas_totales_dia":570,
-    "tmo_promedio_diario":225.1919391094
+    "llamadas_totales_dia":678,
+    "tmo_promedio_diario":248.1411265536
   },
   {
     "fecha":"2025-09-29",
-    "llamadas_totales_dia":1304,
-    "tmo_promedio_diario":221.2501238548
+    "llamadas_totales_dia":1174,
+    "tmo_promedio_diario":250.3205314077
   },
   {
     "fecha":"2025-09-30",
-    "llamadas_totales_dia":1414,
-    "tmo_promedio_diario":223.1170681963
+    "llamadas_totales_dia":1229,
+    "tmo_promedio_diario":251.3950941928
   },
   {
     "fecha":"2025-10-01",
-    "llamadas_totales_dia":1470,
-    "tmo_promedio_diario":220.615112601
+    "llamadas_totales_dia":1130,
+    "tmo_promedio_diario":250.2909688169
   },
   {
     "fecha":"2025-10-02",
-    "llamadas_totales_dia":1365,
-    "tmo_promedio_diario":221.39955759
+    "llamadas_totales_dia":1147,
+    "tmo_promedio_diario":246.9352514347
   },
   {
     "fecha":"2025-10-03",
-    "llamadas_totales_dia":1123,
-    "tmo_promedio_diario":223.2093079805
+    "llamadas_totales_dia":905,
+    "tmo_promedio_diario":245.0580431849
   },
   {
     "fecha":"2025-10-04",
-    "llamadas_totales_dia":730,
-    "tmo_promedio_diario":223.15932248
+    "llamadas_totales_dia":808,
+    "tmo_promedio_diario":244.6587757822
   },
   {
     "fecha":"2025-10-05",
-    "llamadas_totales_dia":606,
-    "tmo_promedio_diario":224.1565039181
+    "llamadas_totales_dia":701,
+    "tmo_promedio_diario":244.0539156797
   },
   {
     "fecha":"2025-10-06",
-    "llamadas_totales_dia":1348,
-    "tmo_promedio_diario":220.2061085185
+    "llamadas_totales_dia":975,
+    "tmo_promedio_diario":250.9197236603
   },
   {
     "fecha":"2025-10-07",
-    "llamadas_totales_dia":1431,
-    "tmo_promedio_diario":220.4259308475
+    "llamadas_totales_dia":1033,
+    "tmo_promedio_diario":251.4647695465
   },
   {
     "fecha":"2025-10-08",
-    "llamadas_totales_dia":1379,
-    "tmo_promedio_diario":221.9495876769
+    "llamadas_totales_dia":1190,
+    "tmo_promedio_diario":250.2122273755
   },
   {
     "fecha":"2025-10-09",
-    "llamadas_totales_dia":1268,
-    "tmo_promedio_diario":223.0515682736
+    "llamadas_totales_dia":1085,
+    "tmo_promedio_diario":248.0114210524
   },
   {
     "fecha":"2025-10-10",
-    "llamadas_totales_dia":1077,
-    "tmo_promedio_diario":223.7109770331
+    "llamadas_totales_dia":901,
+    "tmo_promedio_diario":246.2654661606
   },
   {
     "fecha":"2025-10-11",
-    "llamadas_totales_dia":715,
-    "tmo_promedio_diario":223.6400812396
+    "llamadas_totales_dia":760,
+    "tmo_promedio_diario":245.3732838464
   },
   {
     "fecha":"2025-10-12",
-    "llamadas_totales_dia":628,
-    "tmo_promedio_diario":224.6595290427
+    "llamadas_totales_dia":674,
+    "tmo_promedio_diario":246.6259259829
   },
   {
     "fecha":"2025-10-13",
-    "llamadas_totales_dia":1283,
-    "tmo_promedio_diario":220.4668908129
+    "llamadas_totales_dia":961,
+    "tmo_promedio_diario":248.3910851568
   },
   {
     "fecha":"2025-10-14",
-    "llamadas_totales_dia":1379,
-    "tmo_promedio_diario":220.5938802534
+    "llamadas_totales_dia":1040,
+    "tmo_promedio_diario":250.4570644024
   },
   {
     "fecha":"2025-10-15",
-    "llamadas_totales_dia":1319,
-    "tmo_promedio_diario":215.7715831795
+    "llamadas_totales_dia":1183,
+    "tmo_promedio_diario":246.2528114978
   },
   {
     "fecha":"2025-10-16",
-    "llamadas_totales_dia":1238,
-    "tmo_promedio_diario":217.1268695932
+    "llamadas_totales_dia":1107,
+    "tmo_promedio_diario":244.5813731506
   },
   {
     "fecha":"2025-10-17",
-    "llamadas_totales_dia":1027,
-    "tmo_promedio_diario":219.5206783872
+    "llamadas_totales_dia":870,
+    "tmo_promedio_diario":243.6651235476
   },
   {
     "fecha":"2025-10-18",
-    "llamadas_totales_dia":724,
-    "tmo_promedio_diario":219.4233166946
+    "llamadas_totales_dia":768,
+    "tmo_promedio_diario":243.1276103073
   },
   {
     "fecha":"2025-10-19",
-    "llamadas_totales_dia":646,
-    "tmo_promedio_diario":220.9097964998
+    "llamadas_totales_dia":693,
+    "tmo_promedio_diario":247.0166354888
   },
   {
     "fecha":"2025-10-20",
-    "llamadas_totales_dia":1230,
-    "tmo_promedio_diario":216.6244937035
+    "llamadas_totales_dia":949,
+    "tmo_promedio_diario":248.2962832633
   },
   {
     "fecha":"2025-10-21",
-    "llamadas_totales_dia":1303,
-    "tmo_promedio_diario":216.4476891216
+    "llamadas_totales_dia":1030,
+    "tmo_promedio_diario":248.1304675462
   },
   {
     "fecha":"2025-10-22",
-    "llamadas_totales_dia":1341,
-    "tmo_promedio_diario":221.1059551027
+    "llamadas_totales_dia":1133,
+    "tmo_promedio_diario":251.1608145535
   },
   {
     "fecha":"2025-10-23",
-    "llamadas_totales_dia":1278,
-    "tmo_promedio_diario":221.8152295856
+    "llamadas_totales_dia":1103,
+    "tmo_promedio_diario":248.8704860364
   },
   {
     "fecha":"2025-10-24",
-    "llamadas_totales_dia":1069,
-    "tmo_promedio_diario":222.1361221648
+    "llamadas_totales_dia":928,
+    "tmo_promedio_diario":247.0306315555
   },
   {
     "fecha":"2025-10-25",
-    "llamadas_totales_dia":708,
-    "tmo_promedio_diario":222.3040134717
+    "llamadas_totales_dia":771,
+    "tmo_promedio_diario":247.5250950434
   },
   {
     "fecha":"2025-10-26",
-    "llamadas_totales_dia":570,
-    "tmo_promedio_diario":223.2723794333
+    "llamadas_totales_dia":675,
+    "tmo_promedio_diario":249.0848218378
   },
   {
     "fecha":"2025-10-27",
-    "llamadas_totales_dia":1316,
-    "tmo_promedio_diario":219.7217484286
+    "llamadas_totales_dia":961,
+    "tmo_promedio_diario":253.512133665
   },
   {
     "fecha":"2025-10-28",
-    "llamadas_totales_dia":1369,
-    "tmo_promedio_diario":219.8040358148
+    "llamadas_totales_dia":1055,
+    "tmo_promedio_diario":253.3903898612
   },
   {
     "fecha":"2025-10-29",
-    "llamadas_totales_dia":1562,
-    "tmo_promedio_diario":221.4926433147
+    "llamadas_totales_dia":1270,
+    "tmo_promedio_diario":250.1210568238
   },
   {
     "fecha":"2025-10-30",
-    "llamadas_totales_dia":1503,
-    "tmo_promedio_diario":222.0276541689
+    "llamadas_totales_dia":1209,
+    "tmo_promedio_diario":246.7520021554
   },
   {
     "fecha":"2025-10-31",
-    "llamadas_totales_dia":1249,
-    "tmo_promedio_diario":221.5783999084
+    "llamadas_totales_dia":1040,
+    "tmo_promedio_diario":244.7014853545
   },
   {
     "fecha":"2025-11-01",
-    "llamadas_totales_dia":782,
-    "tmo_promedio_diario":210.4037414553
+    "llamadas_totales_dia":848,
+    "tmo_promedio_diario":238.0877292273
   },
   {
     "fecha":"2025-11-02",
-    "llamadas_totales_dia":679,
-    "tmo_promedio_diario":212.3813752318
+    "llamadas_totales_dia":733,
+    "tmo_promedio_diario":240.0855314927
   },
   {
     "fecha":"2025-11-03",
-    "llamadas_totales_dia":1390,
-    "tmo_promedio_diario":211.6415716501
+    "llamadas_totales_dia":965,
+    "tmo_promedio_diario":243.4971189832
   },
   {
     "fecha":"2025-11-04",
-    "llamadas_totales_dia":1452,
-    "tmo_promedio_diario":211.980012795
+    "llamadas_totales_dia":1044,
+    "tmo_promedio_diario":244.2213702
   },
   {
     "fecha":"2025-11-05",
-    "llamadas_totales_dia":1439,
-    "tmo_promedio_diario":212.9767495929
+    "llamadas_totales_dia":1118,
+    "tmo_promedio_diario":244.0974779351
   },
   {
     "fecha":"2025-11-06",
-    "llamadas_totales_dia":1338,
-    "tmo_promedio_diario":213.3663772448
+    "llamadas_totales_dia":1066,
+    "tmo_promedio_diario":241.9914042509
   },
   {
     "fecha":"2025-11-07",
-    "llamadas_totales_dia":1170,
-    "tmo_promedio_diario":213.8667677527
+    "llamadas_totales_dia":913,
+    "tmo_promedio_diario":239.4906426237
   },
   {
     "fecha":"2025-11-08",
-    "llamadas_totales_dia":787,
-    "tmo_promedio_diario":216.6698747376
+    "llamadas_totales_dia":890,
+    "tmo_promedio_diario":240.6465051926
   },
   {
     "fecha":"2025-11-09",
-    "llamadas_totales_dia":811,
-    "tmo_promedio_diario":218.2120797775
+    "llamadas_totales_dia":788,
+    "tmo_promedio_diario":241.2465773682
   },
   {
     "fecha":"2025-11-10",
-    "llamadas_totales_dia":1413,
-    "tmo_promedio_diario":214.0595921259
+    "llamadas_totales_dia":1061,
+    "tmo_promedio_diario":243.2474106807
   },
   {
     "fecha":"2025-11-11",
-    "llamadas_totales_dia":1459,
-    "tmo_promedio_diario":214.3020807462
+    "llamadas_totales_dia":1132,
+    "tmo_promedio_diario":245.2976997689
   },
   {
     "fecha":"2025-11-12",
-    "llamadas_totales_dia":1405,
-    "tmo_promedio_diario":215.3673035524
+    "llamadas_totales_dia":1206,
+    "tmo_promedio_diario":245.5484345458
   },
   {
     "fecha":"2025-11-13",
-    "llamadas_totales_dia":1360,
-    "tmo_promedio_diario":215.8828952212
+    "llamadas_totales_dia":1137,
+    "tmo_promedio_diario":244.0105667048
   },
   {
     "fecha":"2025-11-14",
-    "llamadas_totales_dia":1221,
-    "tmo_promedio_diario":216.2573850143
+    "llamadas_totales_dia":982,
+    "tmo_promedio_diario":241.8251546351
   },
   {
     "fecha":"2025-11-15",
-    "llamadas_totales_dia":810,
-    "tmo_promedio_diario":207.3557650043
+    "llamadas_totales_dia":879,
+    "tmo_promedio_diario":237.2801670504
   },
   {
     "fecha":"2025-11-16",
-    "llamadas_totales_dia":716,
-    "tmo_promedio_diario":209.7650518418
+    "llamadas_totales_dia":743,
+    "tmo_promedio_diario":240.1199358741
   },
   {
     "fecha":"2025-11-17",
-    "llamadas_totales_dia":1242,
-    "tmo_promedio_diario":209.0864009556
+    "llamadas_totales_dia":983,
+    "tmo_promedio_diario":241.6764773824
   },
   {
     "fecha":"2025-11-18",
-    "llamadas_totales_dia":1301,
-    "tmo_promedio_diario":208.5819855244
+    "llamadas_totales_dia":1066,
+    "tmo_promedio_diario":242.0587354039
   },
   {
     "fecha":"2025-11-19",
-    "llamadas_totales_dia":1287,
-    "tmo_promedio_diario":209.0611865976
+    "llamadas_totales_dia":1153,
+    "tmo_promedio_diario":242.2024633684
   },
   {
     "fecha":"2025-11-20",
-    "llamadas_totales_dia":1225,
-    "tmo_promedio_diario":209.6422777979
+    "llamadas_totales_dia":1093,
+    "tmo_promedio_diario":240.6817716751
   },
   {
     "fecha":"2025-11-21",
-    "llamadas_totales_dia":1023,
-    "tmo_promedio_diario":210.8864872755
+    "llamadas_totales_dia":938,
+    "tmo_promedio_diario":238.6647064658
   },
   {
     "fecha":"2025-11-22",
-    "llamadas_totales_dia":672,
-    "tmo_promedio_diario":214.3789478245
+    "llamadas_totales_dia":803,
+    "tmo_promedio_diario":240.3257171184
   },
   {
     "fecha":"2025-11-23",
-    "llamadas_totales_dia":643,
-    "tmo_promedio_diario":214.8453161953
+    "llamadas_totales_dia":703,
+    "tmo_promedio_diario":241.8691515243
   },
   {
     "fecha":"2025-11-24",
-    "llamadas_totales_dia":1330,
-    "tmo_promedio_diario":211.8732166389
+    "llamadas_totales_dia":986,
+    "tmo_promedio_diario":245.5515914346
   }
 ]
