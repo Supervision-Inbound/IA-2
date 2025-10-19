@@ -18,13 +18,12 @@ TMO_MODEL_FILE = os.path.join(MODEL_DIR, "modelo_tmo.keras"); TMO_SCALER_FILE = 
 HOSTING_FILE = os.path.join(DATA_DIR, "historical_data.csv"); TMO_FILE = os.path.join(DATA_DIR, "TMO_HISTORICO.csv"); FERIADOS_FILE = os.path.join(DATA_DIR, "Feriados_Chilev2.csv"); CLIMA_HIST_FILE = os.path.join(DATA_DIR, "historical_data.csv")
 TARGET_CALLS = "recibidos_nacional"; TARGET_TMO = "tmo_general"
 
-# --- AJUSTE v27: Parámetros de Post-Procesamiento (de forecast3m.py) ---
-MAD_K = 5.0  # K base (lunes-viernes)
-MAD_K_WEEKEND = 6.5 # K fin de semana
-# --- Fin Ajuste ---
+# --- Parámetros de Post-Procesamiento (v27) ---
+MAD_K = 5.0
+MAD_K_WEEKEND = 6.5
+# --- Fin ---
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'; warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl'); warnings.filterwarnings('ignore', category=FutureWarning)
-# Suprimir advertencias de Pandas sobre chained assignment (común en post-proceso)
 pd.options.mode.chained_assignment = None # default='warn'
 
 # --- FUNCIONES DE UTILIDAD (main.py + forecast3m.py) ---
@@ -83,171 +82,109 @@ def calculate_erlang_agents(calls_per_hour, tmo_seconds, occupancy_target=0.85):
     agents = agents.replace([np.inf, -np.inf], np.nan).fillna(0)
     return agents.astype(int)
 
-# --- AJUSTE v27: INICIO FUNCIONES DE POST-PROCESAMIENTO (de forecast3m.py) ---
-# Adaptadas para usar un DataFrame con columna 'ts' en lugar de DatetimeIndex
-
+# --- INICIO FUNCIONES DE POST-PROCESAMIENTO (v27) ---
 def _safe_ratio(num, den, fallback=1.0):
     num = float(num) if num is not None and not np.isnan(num) else np.nan
     den = float(den) if num is not None and den is not None and not np.isnan(den) and den != 0 else np.nan
-    if np.isnan(num) or np.isnan(den) or den == 0:
-        return fallback
+    if np.isnan(num) or np.isnan(den) or den == 0: return fallback
     return num / den
 
 def load_holidays(csv_path, tz=TZ):
-    """Carga feriados y devuelve un set de objetos date."""
-    if not os.path.exists(csv_path):
-        print(f"  [Adv] No se encontró archivo de feriados en {csv_path}. No se aplicarán ajustes.")
-        return set()
+    if not os.path.exists(csv_path): print(f"  [Adv] {csv_path} no encontrado."); return set()
     try:
         fer = pd.read_csv(csv_path)
         if "Fecha" not in fer.columns:
-             # Probar con 'fecha' minúscula
-             if "fecha" in fer.columns:
-                 fer.rename(columns={"fecha":"Fecha"}, inplace=True)
-             else:
-                 print("  [Adv] CSV de feriados no tiene columna 'Fecha'."); return set()
-        # Intentar formato dd-mm-yyyy primero
-        try:
-            fechas = pd.to_datetime(fer["Fecha"].astype(str), format='%d-%m-%Y', errors='coerce').dt.date
-        except Exception:
-            fechas = pd.to_datetime(fer["Fecha"].astype(str), errors='coerce').dt.date
-        
+             if "fecha" in fer.columns: fer.rename(columns={"fecha":"Fecha"}, inplace=True)
+             else: print("  [Adv] CSV feriados sin columna 'Fecha'."); return set()
+        try: fechas = pd.to_datetime(fer["Fecha"].astype(str), format='%d-%m-%Y', errors='coerce').dt.date
+        except Exception: fechas = pd.to_datetime(fer["Fecha"].astype(str), errors='coerce').dt.date
         return set(fechas.dropna())
-    except Exception as e:
-        print(f"  [Error] No se pudo cargar feriados: {e}"); return set()
+    except Exception as e: print(f"  [Error] No se pudo cargar feriados: {e}"); return set()
 
 def mark_holidays_series(ts_series, holidays_set):
-    """Crea una Serie booleana 'is_holiday' desde una Serie de timestamps."""
-    if holidays_set is None or not holidays_set:
-        return pd.Series(False, index=ts_series.index, name="is_holiday")
-    # Asegurar que 'ts_series' esté en la zona horaria correcta antes de sacar .date
-    if ts_series.dt.tz is None:
-        ts_dates = ts_series.dt.tz_localize(TZ, ambiguous="NaT", nonexistent="NaT").dt.date
-    else:
-        ts_dates = ts_series.dt.tz_convert(TZ).dt.date
+    if holidays_set is None or not holidays_set: return pd.Series(False, index=ts_series.index, name="is_holiday")
+    if ts_series.dt.tz is None: ts_dates = ts_series.dt.tz_localize(TZ, ambiguous="NaT", nonexistent="NaT").dt.date
+    else: ts_dates = ts_series.dt.tz_convert(TZ).dt.date
     return ts_dates.isin(holidays_set).astype(bool).rename("is_holiday")
 
 def compute_seasonal_weights(df_hist, col, weeks=8, clip_min=0.75, clip_max=1.30):
-    """w(dow,h) = mediana_hist(dow,h) / mediana_hist_por_hora(h)"""
     print(f"  Calculando recalibración estacional (últimas {weeks} semanas)...")
     d = df_hist.copy()
     if len(d) == 0: return { (dow,h): 1.0 for dow in range(7) for h in range(24) }
-    end = d['ts'].max(); start = end - pd.Timedelta(weeks=weeks)
-    d = d.loc[d['ts'] >= start]
-    if 'dow' not in d.columns: d = add_time_parts(d) # Asegurar dow/hour
-    
-    med_dow_hour = d.groupby(["dow","hour"])[col].median()
-    med_hour = d.groupby("hour")[col].median()
-    weights = {}
+    end = d['ts'].max(); start = end - pd.Timedelta(weeks=weeks); d = d.loc[d['ts'] >= start]
+    if 'dow' not in d.columns: d = add_time_parts(d)
+    med_dow_hour = d.groupby(["dow","hour"])[col].median(); med_hour = d.groupby("hour")[col].median(); weights = {}
     for dow in range(7):
         for h in range(24):
             num = med_dow_hour.get((dow,h), np.nan); den = med_hour.get(h, np.nan)
-            w = _safe_ratio(num, den, fallback=1.0)
-            weights[(dow,h)] = float(np.clip(w, clip_min, clip_max))
+            w = _safe_ratio(num, den, fallback=1.0); weights[(dow,h)] = float(np.clip(w, clip_min, clip_max))
     return weights
 
 def apply_seasonal_weights(df_future, weights, col_name="pred_llamadas"):
-    """Aplica pesos estacionales a un dataframe futuro."""
     df = df_future.copy()
-    if 'dow' not in df.columns: df = add_time_parts(df) # Asegurar dow/hour
+    if 'dow' not in df.columns: df = add_time_parts(df)
     idx = list(zip(df["dow"].values, df["hour"].values))
     w = np.array([weights.get(key, 1.0) for key in idx], dtype=float)
-    df[col_name] = (df[col_name].astype(float) * w)
-    return df
+    df[col_name] = (df[col_name].astype(float) * w); return df
 
 def baseline_from_history(df_hist, col):
-    """Calcula mediana, MAD y q95 por dow y hour del histórico."""
     print(f"  Calculando baselines robustos (MAD, q95) para '{col}'...")
-    if df_hist.empty or col not in df_hist.columns:
-        print("  [Advertencia] Histórico vacío o sin target_col. No se calcularán baselines MAD.")
-        return pd.DataFrame()
-    d = add_time_parts(df_hist[['ts', col]].copy())
-    g = d.groupby(["dow", "hour"])[col]
-    base = g.median().rename("med").to_frame()
+    if df_hist.empty or col not in df_hist.columns or 'ts' not in df_hist.columns:
+        print("  [Advertencia] Histórico vacío o sin 'ts'/'target_col'. No baselines MAD."); return pd.DataFrame()
+    d = add_time_parts(df_hist[['ts', col]].copy()) # <--- FIX: Asegurar que add_time_parts reciba 'ts'
+    g = d.groupby(["dow", "hour"])[col]; base = g.median().rename("med").to_frame()
     median_map = base['med'].to_dict()
     def mad_calc(x):
-        med = median_map.get((x.name[0], x.name[1]), np.nan)
+        med = median_map.get(x.name, np.nan) # x.name es (dow, hour)
         if pd.isna(med): return np.nan
         return np.median(np.abs(x - med))
-    base['mad'] = g.apply(mad_calc)
-    base['q95'] = g.quantile(0.95)
-    
-    # Rellenar NaNs
+    base['mad'] = g.apply(mad_calc); base['q95'] = g.quantile(0.95)
     global_mad_median = base['mad'].median(); global_q95_median = base['q95'].median()
     base['mad'].fillna(global_mad_median if not pd.isna(global_mad_median) else 1.0, inplace=True)
     base['q95'].fillna(global_q95_median if not pd.isna(global_q95_median) else base['med'], inplace=True)
-    base['mediana'].fillna(d[col].median(), inplace=True)
-    base['mad'] = np.maximum(base['mad'], 1e-6) # Evitar MAD=0
+    base['mediana'].fillna(d[col].median(), inplace=True); base['mad'] = np.maximum(base['mad'], 1e-6)
     return base.reset_index()
 
 def apply_peak_smoothing_history(df_future, col, base, k_weekday=K_MAD_WEEKDAY, k_weekend=K_MAD_WEEKEND):
-    """Aplica capping (recorte) a picos basado en baselines históricos."""
     df = df_future.copy()
     if base.empty: print("    [Advertencia] Baselines vacíos. Omitiendo capping MAD."); return df
     if 'dow' not in df.columns: df = add_time_parts(df)
-    
     df_merged = pd.merge(df, base, on=['dow', 'hour'], how='left')
-    # Rellenar NaNs en baselines (si alguna combinación dow/hour no estaba en histórico)
-    df_merged['mediana'].fillna(base['mediana'].mean(), inplace=True)
-    df_merged['mad'].fillna(base['mad'].mean(), inplace=True)
-    df_merged['q95'].fillna(base['q95'].mean(), inplace=True)
-    
-    K = np.where(df_merged["dow"].isin([5, 6]), k_weekend, k_weekday).astype(float) # 5=sáb,6=dom
+    df_merged['mediana'].fillna(base['mediana'].mean(), inplace=True); df_merged['mad'].fillna(base['mad'].mean(), inplace=True); df_merged['q95'].fillna(base['q95'].mean(), inplace=True)
+    K = np.where(df_merged["dow"].isin([5, 6]), k_weekend, k_weekday).astype(float)
     upper_cap = df_merged["mediana"].values + K * df_merged["mad"].values
-    
-    # Recortar picos que superan AMBOS, el cap dinámico (MAD) Y el q95 histórico
     mask = (df_merged[col].astype(float).values > upper_cap) & (df_merged[col].astype(float).values > df_merged["q95"].values)
     n_capped = mask.sum()
-    if n_capped > 0:
-        print(f"    - Recortando {n_capped} picos (Capping MAD) a límite histórico.")
-        df_merged.loc[mask, col] = upper_cap[mask]
-    
-    return df_merged[df.columns] # Devolver solo las columnas originales
+    if n_capped > 0: print(f"    - Recortando {n_capped} picos (Capping MAD)."); df_merged.loc[mask, col] = upper_cap[mask]
+    return df_merged[df.columns]
 
 def compute_holiday_factors(df_hist, holidays_set, col_calls=TARGET_CALLS, col_tmo=TARGET_TMO):
-    """Calcula factores multiplicativos por hora para feriados."""
     print("  Calculando factores de ajuste por feriados...")
-    dfh = add_time_parts(df_hist[[col_calls, col_tmo, 'ts']].copy())
+    dfh = add_time_parts(df_hist.copy()) # Usar el DF completo
     dfh["is_holiday"] = mark_holidays_series(dfh['ts'], holidays_set).values
-    
-    # Calcular medianas
-    med_hol_calls = dfh[dfh["is_holiday"]].groupby("hour")[col_calls].median()
-    med_nor_calls = dfh[~dfh["is_holiday"]].groupby("hour")[col_calls].median()
-    med_hol_tmo   = dfh[dfh["is_holiday"]].groupby("hour")[col_tmo].median()
-    med_nor_tmo   = dfh[~dfh["is_holiday"]].groupby("hour")[col_tmo].median()
-    
-    # Fallback global
+    med_hol_calls = dfh[dfh["is_holiday"]].groupby("hour")[col_calls].median(); med_nor_calls = dfh[~dfh["is_holiday"]].groupby("hour")[col_calls].median()
+    med_hol_tmo   = dfh[dfh["is_holiday"]].groupby("hour")[col_tmo].median(); med_nor_tmo   = dfh[~dfh["is_holiday"]].groupby("hour")[col_tmo].median()
     g_hol_calls = dfh[dfh["is_holiday"]][col_calls].median(); g_nor_calls = dfh[~dfh["is_holiday"]][col_calls].median()
     g_hol_tmo   = dfh[dfh["is_holiday"]][col_tmo].median(); g_nor_tmo   = dfh[~dfh["is_holiday"]][col_tmo].median()
-    global_calls_factor = _safe_ratio(g_hol_calls, g_nor_calls, fallback=0.75) # Asume 75% si no hay datos
-    global_tmo_factor   = _safe_ratio(g_hol_tmo, g_nor_tmo, fallback=1.00) # Asume 100% si no hay datos
-
+    global_calls_factor = _safe_ratio(g_hol_calls, g_nor_calls, fallback=0.75)
+    global_tmo_factor   = _safe_ratio(g_hol_tmo, g_nor_tmo, fallback=1.00)
     factors_calls_by_hour = {h: _safe_ratio(med_hol_calls.get(h, np.nan), med_nor_calls.get(h, np.nan), fallback=global_calls_factor) for h in range(24)}
     factors_tmo_by_hour   = {h: _safe_ratio(med_hol_tmo.get(h, np.nan),   med_nor_tmo.get(h, np.nan),   fallback=global_tmo_factor)   for h in range(24)}
-
-    # Aplicar clips (límites) a los factores
     factors_calls_by_hour = {h: float(np.clip(v, 0.10, 1.20)) for h, v in factors_calls_by_hour.items()}
     factors_tmo_by_hour   = {h: float(np.clip(v, 0.70, 1.50)) for h, v in factors_tmo_by_hour.items()}
     return factors_calls_by_hour, factors_tmo_by_hour, global_calls_factor, global_tmo_factor
 
 def apply_holiday_adjustment(df_future, holidays_set, factors_calls_by_hour, factors_tmo_by_hour, col_calls="pred_llamadas", col_tmo="pred_tmo_seg"):
-    """Aplica factores de feriado a predicciones futuras."""
-    df = add_time_parts(df_future.copy())
-    is_hol = mark_holidays_series(df['ts'], holidays_set).values
-    if is_hol.sum() == 0:
-        print("    - No hay feriados en el horizonte futuro. Omitiendo ajuste.")
-        return df_future # Devolver original si no hay feriados
-    
+    df = add_time_parts(df_future.copy()); is_hol = mark_holidays_series(df['ts'], holidays_set).values
+    if is_hol.sum() == 0: print("    - No hay feriados en horizonte futuro."); return df_future
     hours = df["hour"].values
     call_f = np.array([factors_calls_by_hour.get(int(h), 1.0) for h in hours])
     tmo_f  = np.array([factors_tmo_by_hour.get(int(h), 1.0) for h in hours])
-    
-    # Aplicar solo a las filas que son feriado
     df.loc[is_hol, col_calls] = (df.loc[is_hol, col_calls].astype(float) * call_f[is_hol])
     df.loc[is_hol, col_tmo]  = (df.loc[is_hol, col_tmo].astype(float)  * tmo_f[is_hol])
     print(f"    - Ajuste de feriados aplicado a {is_hol.sum()} horas.")
-    return df[df_future.columns] # Devolver solo columnas originales
-# --- AJUSTE v27: FIN FUNCIONES DE POST-PROCESAMIENTO ---
+    return df[df_future.columns]
+# --- FIN FUNCIONES DE POST-PROCESAMIENTO ---
 
 
 # --- FUNCIONES DEL PIPELINE DE INFERENCIA ---
@@ -282,7 +219,7 @@ def process_future_climate(df_future_weather, df_baselines):
     else: df["ts"] = df["ts"].dt.tz_convert(TZ)
     df = df.dropna(subset=['ts']).sort_values(['comuna', 'ts']); df['dow'] = df['ts'].dt.dayofweek; df['hour'] = df['ts'].dt.hour
     if df_baselines.empty: print("    [Clima] Adv: Baselines vacíos, anomalías serán 0."); df_merged = df.copy(); df_merged['temperatura_median'] = 0; df_merged['temperatura_std'] = 1 # Etc
-    else: df_merged = pd.merge(df, df_baselines, on=['comuna', 'dow', 'hour'], how='left') # v14.1 fix
+    else: df_merged = pd.merge(df, df_baselines, on=['comuna', 'dow', 'hour'], how='left')
     numeric_cols = df_merged.select_dtypes(include=np.number).columns; df_merged[numeric_cols] = df_merged[numeric_cols].fillna(df_merged[numeric_cols].mean())
     expected_metrics = [c for c in ['temperatura', 'precipitacion', 'lluvia'] if c in df.columns]; anomaly_cols = []
     for metric in expected_metrics:
@@ -319,7 +256,7 @@ def generate_alerts_json(df_per_comuna, df_risk_proba, proba_threshold=0.5, impa
 # --- FUNCIÓN PRINCIPAL ORQUESTADORA ---
 
 def main(horizonte_dias):
-    print("="*60); print(f"INICIANDO PIPELINE DE INFERENCIA (v_main 27 - MLP Base + Post-Proceso)"); print(f"Zona Horaria: {TZ} | Horizonte: {horizonte_dias} días"); print("="*60) # v27
+    print("="*60); print(f"INICIANDO PIPELINE DE INFERENCIA (v_main 27.1 - MLP Base + Post-Proceso)"); print(f"Zona Horaria: {TZ} | Horizonte: {horizonte_dias} días"); print("="*60) # v27.1
 
     # --- 1. Cargar Modelos y Artefactos (v7) ---
     print("\n--- Fase 1: Cargando Modelos y Artefactos (v7) ---")
@@ -327,8 +264,14 @@ def main(horizonte_dias):
         model_planner = tf.keras.models.load_model(PLANNER_MODEL_FILE); scaler_planner = joblib.load(PLANNER_SCALER_FILE)
         with open(PLANNER_COLS_FILE, 'r') as f: cols_planner = json.load(f)
         model_risk = tf.keras.models.load_model(RISK_MODEL_FILE); scaler_risk = joblib.load(RISK_SCALER_FILE)
-        try: with open(RISK_COLS_FILE, 'r') as f: cols_risk = json.load(f)
-        except FileNotFoundError: print(f"  [Adv] {RISK_COLS_FILE} no encontrado."); cols_risk = []
+        
+        # --- AJUSTE v27.1: Corrección indentación ---
+        try:
+            with open(RISK_COLS_FILE, 'r') as f: cols_risk = json.load(f)
+        except FileNotFoundError:
+            print(f"  [Adv] {RISK_COLS_FILE} no encontrado."); cols_risk = []
+        # --- Fin Ajuste ---
+
         try: baselines_clima = joblib.load(RISK_BASELINES_FILE)
         except FileNotFoundError: print(f"  [Adv] {RISK_BASELINES_FILE} no encontrado."); baselines_clima = pd.DataFrame()
         model_tmo = tf.keras.models.load_model(TMO_MODEL_FILE); scaler_tmo = joblib.load(TMO_SCALER_FILE)
@@ -338,9 +281,7 @@ def main(horizonte_dias):
 
     # --- 2. Cargar Datos Históricos ---
     print("\n--- Fase 2: Cargando Datos Históricos ---")
-    # --- AJUSTE v27: Usar nueva función load_holidays ---
     holidays_set = load_holidays(FERIADOS_FILE, tz=TZ)
-    # --- Fin Ajuste ---
     df_hosting_full = read_data(HOSTING_FILE); df_hosting = ensure_ts_and_tz(df_hosting_full)
     if 'feriados' not in df_hosting.columns: print("  [Info] Creando columna 'feriados'."); df_hosting['feriados'] = mark_holidays_series(df_hosting['ts'], holidays_set).values
     else: df_hosting['feriados'] = pd.to_numeric(df_hosting['feriados'], errors='coerce').fillna(0).astype(int)
@@ -353,15 +294,11 @@ def main(horizonte_dias):
     if 'q_llamadas_comercial' in df_tmo_hist.columns and 'q_llamadas_general' in df_tmo_hist.columns: df_tmo_hist['proporcion_comercial'] = df_tmo_hist['q_llamadas_comercial'] / (df_tmo_hist['q_llamadas_general'] + 1e-6); df_tmo_hist['proporcion_tecnica'] = df_tmo_hist['q_llamadas_tecnico'] / (df_tmo_hist['q_llamadas_general'] + 1e-6)
     else: print("  [Adv] No cols q_llamadas TMO."); df_tmo_hist['proporcion_comercial'] = 0; df_tmo_hist['proporcion_tecnica'] = 0
     
-    # --- AJUSTE v27: Mergear TMO para tener historial completo para post-proceso ---
     df_hist_merged = pd.merge(df_hosting_agg, df_tmo_hist[['ts', TARGET_TMO]], on='ts', how='left')
-    # Rellenar TMOs faltantes (ej. ffill/bfill) para tener data completa
-    df_hist_merged[TARGET_TMO].fillna(method='ffill', inplace=True)
-    df_hist_merged[TARGET_TMO].fillna(method='bfill', inplace=True)
-    df_hist_merged[TARGET_TMO].fillna(df_hist_merged[TARGET_TMO].mean(), inplace=True) # Relleno final
-    df_hist_merged.dropna(subset=[TARGET_CALLS, TARGET_TMO], inplace=True) # Quitar si algo quedó nulo
-    df_hosting_processed = add_time_parts(df_hist_merged)
-    # --- Fin Ajuste ---
+    df_hist_merged[TARGET_TMO].fillna(method='ffill', inplace=True); df_hist_merged[TARGET_TMO].fillna(method='bfill', inplace=True)
+    df_hist_merged[TARGET_TMO].fillna(df_hist_merged[TARGET_TMO].mean(), inplace=True)
+    df_hist_merged.dropna(subset=[TARGET_CALLS, TARGET_TMO], inplace=True)
+    df_hosting_processed = add_time_parts(df_hist_merged) # Contiene 'ts', 'recibidos_nacional', 'tmo_general'
 
     last_hist_ts = df_hosting_processed['ts'].max(); print(f"  [OK] Datos históricos cargados. Último timestamp: {last_hist_ts}")
 
@@ -413,11 +350,10 @@ def main(horizonte_dias):
     df_future['tmo_hora'] = model_tmo.predict(X_tmo_s).clip(0) # <-- Dejar como float
     print("  [OK] Predicciones BASE TMO (MLP v7) generadas.")
 
-    # --- AJUSTE v27: Nueva Fase de Post-Procesamiento ---
+    # --- Fase 6.5: Aplicando Post-Procesamiento (v27) ---
     print("\n--- Fase 6.5: Aplicando Post-Procesamiento (Lógica forecast3m.py) ---")
-    # Renombrar columnas para que coincidan con las funciones de forecast3m.py
     df_future_post = df_future.rename(columns={'llamadas_hora': 'pred_llamadas', 'tmo_hora': 'pred_tmo_seg'})
-
+    
     # 1. Recalibración Estacional
     seasonal_w = compute_seasonal_weights(df_hosting_processed, TARGET_CALLS, weeks=8)
     df_future_post = apply_seasonal_weights(df_future_post, seasonal_w, col_name="pred_llamadas")
@@ -431,11 +367,10 @@ def main(horizonte_dias):
     print(f"  Factor global feriado (info): llamadas={g_calls:.3f}, TMO={g_tmo:.3f}")
     df_future_post = apply_holiday_adjustment(df_future_post, holidays_set, f_calls, f_tmo, col_calls="pred_llamadas", col_tmo="pred_tmo_seg")
     
-    # Devolver nombres y tipos de datos correctos
     df_future['llamadas_hora'] = df_future_post['pred_llamadas'].round().clip(0).astype(int)
     df_future['tmo_hora'] = df_future_post['pred_tmo_seg'].clip(0)
     print("--- Post-Procesamiento Completado ---")
-    # --- Fin Ajuste ---
+    # --- Fin ---
 
     # --- 7. Generar Salidas Finales ---
     print("\n--- Fase 7: Generando Archivos JSON de Salida (Ajustados) ---")
