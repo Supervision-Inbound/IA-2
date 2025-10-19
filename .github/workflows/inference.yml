@@ -1,14 +1,10 @@
 name: Flujo de Inferencia IA (IA-2)
 
 on:
-  # 1. Trigger Manual: Para ejecutarlo cuando quieras desde la pestaña "Actions"
   workflow_dispatch:
-
-  # 2. Trigger Programado: Se ejecuta diariamente a las 7:00 AM UTC
   schedule:
     - cron: '0 7 * * *'
 
-# Establece la zona horaria para todo el flujo
 env:
   TZ: 'America/Santiago'
 
@@ -22,7 +18,6 @@ jobs:
 
     steps:
       # --- 1. CONFIGURACIÓN INICIAL ---
-
       - name: 1. Checkout del Repositorio
         uses: actions/checkout@v4
         with:
@@ -35,41 +30,44 @@ jobs:
           cache: 'pip' 
 
       # --- 2. OBTENCIÓN DE MODELOS ---
-
       - name: 3. Crear Directorio de Modelos
         run: mkdir -p models
 
-      # --- PASO CORREGIDO ---
-      - name: 4. Descargar Modelos desde Release (AI-2)
+      # --- PASO AJUSTADO (Volvemos a 1 ZIP) ---
+      - name: 4. Descargar Modelos (ZIP) desde Release (AI-2)
         uses: robinraju/release-downloader@v1.8
         with:
           repository: ${{ github.repository }}
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: 'AI-2'
-          # out-file-path es el parámetro correcto para esta versión
-          out-file-path: 'models/' 
+          # Buscamos UN solo archivo ZIP
+          fileName: 'artefactos_modelos.zip'
+          # Lo descargamos en la carpeta models
+          out-file-path: 'models/artefactos_modelos.zip'
+          
+      - name: 5. Descomprimir Modelos
+        run: |
+          # Descomprime el ZIP dentro de la carpeta models/
+          # -o (overwrite) -d (destination)
+          unzip -o models/artefactos_modelos.zip -d models/
 
-      - name: 5. Verificar Modelos Descargados (Opcional)
+      - name: 6. Verificar Modelos Descargados
         run: |
           echo "Contenido del directorio de modelos:"
           ls -l models/
 
       # --- 3. EJECUCIÓN DEL PIPELINE ---
+      - name: 7. Instalar Dependencias de IA
+        run: pip install -r requirements.txt
 
-      - name: 6. Instalar Dependencias de IA
-        run: |
-          pip install -r requirements.txt
-
-      - name: 7. Ejecutar Pipeline de Inferencia
-        run: |
-          python -m src.main --horizonte 120
+      - name: 8. Ejecutar Pipeline de Inferencia
+        run: python -m src.main --horizonte 120
 
       # --- 4. PUBLICACIÓN DE RESULTADOS ---
-
-      - name: 8. Publicar Salidas JSON (Commit al Repo)
+      - name: 9. Publicar Salidas JSON (Commit al Repo)
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: 'CI: Actualización automática de predicciones IA'
+          commit_message: 'CI: Actualización automática de predicciones IA (v8 Quantile)'
           file_pattern: 'public/Predicion_daria.json public/prediccion_horaria.json public/alertas_climaticas.json'
           commit_user_name: 'IA Prediction Bot'
           commit_user_email: 'actions@github.com'
