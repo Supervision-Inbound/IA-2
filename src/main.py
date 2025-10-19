@@ -44,7 +44,7 @@ def quantile_loss(q):
     return loss
 
 # --- FUNCIONES DE UTILIDAD ---
-# (read_data, ensure_ts_and_tz, add_time_parts - sin cambios v18.2)
+# (read_data, ensure_ts_and_tz, add_time_parts, normalize_climate_columns, calculate_erlang_agents - sin cambios v18.3)
 def read_data(path, hoja=None):
     path_lower = path.lower()
     if not os.path.exists(path): raise FileNotFoundError(f"No encontrado: {path}.")
@@ -74,7 +74,7 @@ def ensure_ts_and_tz(df):
 
 def add_time_parts(df):
     df_copy = df.copy(); df_copy["dow"] = df_copy["ts"].dt.dayofweek; df_copy["month"] = df_copy["ts"].dt.month; df_copy["hour"] = df_copy["ts"].dt.hour; df_copy["day"] = df_copy["ts"].dt.day
-    df_copy["semana_del_mes"] = (df_copy["day"] - 1) // 7 + 1; df_copy["es_dia_de_pago"] = df_copy['day'].isin([1, 2, 15, 16, 29, 30, 31]).astype(int) # v18.2 fix
+    df_copy["semana_del_mes"] = (df_copy["day"] - 1) // 7 + 1; df_copy["es_dia_de_pago"] = df_copy['day'].isin([1, 2, 15, 16, 29, 30, 31]).astype(int)
     df_copy["es_domingo"] = (df_copy["dow"] == 6).astype(int); df_copy["es_madrugada"] = (df_copy["hour"] < 6).astype(int)
     df_copy["es_navidad"] = ((df_copy["month"] == 12) & (df_copy["day"] == 25)).astype(int); df_copy["es_ano_nuevo"] = ((df_copy["month"] == 1) & (df_copy["day"] == 1)).astype(int)
     df_copy["es_fiestas_patrias"] = ((df_copy["month"] == 9) & (df_copy["day"].isin([18, 19]))).astype(int)
@@ -82,7 +82,6 @@ def add_time_parts(df):
     df_copy["sin_dow"] = np.sin(2 * np.pi * df_copy["dow"] / 7); df_copy["cos_dow"] = np.cos(2 * np.pi * df_copy["dow"] / 7)
     return df_copy
 
-# (normalize_climate_columns - sin cambios)
 def normalize_climate_columns(df: pd.DataFrame) -> pd.DataFrame:
     column_map = {'temperatura': ['temperature_2m', 'temperatura', 'temp', 'temp_2m'], 'precipitacion': ['precipitation', 'precipitacion', 'precipitación', 'rain_mm', 'rain'], 'lluvia': ['rain', 'lluvia', 'rainfall']}
     df_renamed = df.copy(); df_renamed.columns = [c.lower().strip().replace(' ', '_') for c in df_renamed.columns]
@@ -91,40 +90,13 @@ def normalize_climate_columns(df: pd.DataFrame) -> pd.DataFrame:
             if name in df_renamed.columns: df_renamed.rename(columns={name: std}, inplace=True); break
     return df_renamed
 
-
-# --- AJUSTE v18.3: calculate_erlang_agents más robusto ---
 def calculate_erlang_agents(calls_per_hour, tmo_seconds, occupancy_target=0.85):
-    """
-    Calcula agentes requeridos usando una heurística simple de carga de trabajo.
-    Ahora maneja NaN/inf antes de convertir a int.
-    """
-    # Asegurar que las entradas sean numéricas y rellenar NaNs con 0
-    calls = pd.to_numeric(calls_per_hour, errors='coerce').fillna(0)
-    tmo = pd.to_numeric(tmo_seconds, errors='coerce').fillna(0)
-
-    # Si no hay llamadas o el TMO es 0 o negativo, los agentes son 0
-    if (calls.sum() == 0) or (tmo <= 0).all():
-        return pd.Series(0, index=calls_per_hour.index)
-
-    # Calcular intensidad de tráfico (evitando división por cero si tmo es 0)
-    # Rellenar tmo=0 con un valor pequeño (epsilon) para evitar NaN/inf directos si hay llamadas
-    tmo_safe = tmo.replace(0, 1e-6) # Reemplaza 0s temporales
-    traffic_intensity = (calls * tmo_safe) / 3600
-
-    # Heurística simple: agentes = carga / ocupación objetivo
-    agents = np.ceil(traffic_intensity / occupancy_target)
-
-    # Asegura un mínimo de 1 agente si hay tráfico (llamadas > 0)
-    agents[calls > 0] = agents[calls > 0].apply(lambda x: max(x, 1))
-
-    # --- Manejo de NaN/inf ---
-    # Reemplazar infinitos (positivos o negativos) y NaNs con 0
+    calls = pd.to_numeric(calls_per_hour, errors='coerce').fillna(0); tmo = pd.to_numeric(tmo_seconds, errors='coerce').fillna(0)
+    if (calls.sum() == 0) or (tmo <= 0).all(): return pd.Series(0, index=calls_per_hour.index)
+    tmo_safe = tmo.replace(0, 1e-6); traffic_intensity = (calls * tmo_safe) / 3600
+    agents = np.ceil(traffic_intensity / occupancy_target); agents[calls > 0] = agents[calls > 0].apply(lambda x: max(x, 1))
     agents = agents.replace([np.inf, -np.inf], np.nan).fillna(0)
-    # --- Fin Manejo ---
-
     return agents.astype(int)
-# --- Fin del Ajuste ---
-
 
 # (create_inference_sequences - sin cambios desde v18.1)
 def create_inference_sequences(historical_scaled_context, future_scaled_data, time_steps=N_STEPS):
@@ -204,7 +176,7 @@ def generate_alerts_json(df_per_comuna, df_risk_proba, proba_threshold=0.5, impa
 # --- FUNCIÓN PRINCIPAL ORQUESTADORA ---
 
 def main(horizonte_dias):
-    print("="*60); print(f"INICIANDO PIPELINE DE INFERENCIA (v_main 18.3 - LSTM)"); print(f"Zona Horaria: {TZ} | Horizonte: {horizonte_dias} días"); print("="*60) # v18.3
+    print("="*60); print(f"INICIANDO PIPELINE DE INFERENCIA (v_main 18.4 - LSTM)"); print(f"Zona Horaria: {TZ} | Horizonte: {horizonte_dias} días"); print("="*60) # v18.4
 
     # --- 1. Cargar Modelos y Artefactos ---
     print("\n--- Fase 1: Cargando Modelos y Artefactos ---")
@@ -213,8 +185,14 @@ def main(horizonte_dias):
         model_planner = tf.keras.models.load_model(PLANNER_MODEL_FILE, custom_objects=custom_objects_dict); scaler_planner = joblib.load(PLANNER_SCALER_FILE)
         with open(PLANNER_COLS_FILE, 'r') as f: cols_planner = json.load(f)
         model_risk = tf.keras.models.load_model(RISK_MODEL_FILE); scaler_risk = joblib.load(RISK_SCALER_FILE)
-        try: with open(RISK_COLS_FILE, 'r') as f: cols_risk = json.load(f)
-        except FileNotFoundError: print(f"  [Adv] {RISK_COLS_FILE} no encontrado."); cols_risk = []
+
+        # --- AJUSTE v18.4: Corrección indentación ---
+        try:
+            with open(RISK_COLS_FILE, 'r') as f: cols_risk = json.load(f)
+        except FileNotFoundError: # <-- Indentación Correcta
+            print(f"  [Adv] {RISK_COLS_FILE} no encontrado."); cols_risk = []
+        # --- Fin Ajuste ---
+
         try: baselines_clima = joblib.load(RISK_BASELINES_FILE)
         except FileNotFoundError: print(f"  [Adv] {RISK_BASELINES_FILE} no encontrado."); baselines_clima = pd.DataFrame()
         model_tmo = tf.keras.models.load_model(TMO_MODEL_FILE, custom_objects=custom_objects_dict); scaler_tmo = joblib.load(TMO_SCALER_FILE)
@@ -324,7 +302,7 @@ def main(horizonte_dias):
     # --- 7. Generar Salidas Finales ---
     print("\n--- Fase 7: Generando Archivos JSON de Salida ---")
     os.makedirs(PUBLIC_DIR, exist_ok=True)
-    df_future['agentes_requeridos'] = calculate_erlang_agents(df_future['llamadas_hora'], df_future['tmo_hora']) # <-- Aquí falló
+    df_future['agentes_requeridos'] = calculate_erlang_agents(df_future['llamadas_hora'], df_future['tmo_hora'])
     df_horaria = df_future[['ts', 'llamadas_hora', 'tmo_hora', 'agentes_requeridos']].copy()
     df_horaria['ts'] = df_horaria['ts'].dt.strftime('%Y-%m-%d %H:%M:%S')
     output_path_horaria = os.path.join(PUBLIC_DIR, "prediccion_horaria.json")
