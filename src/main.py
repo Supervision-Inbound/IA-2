@@ -72,6 +72,7 @@ def ensure_ts_and_tz(df):
     """
     Asegura que el DataFrame tenga una columna 'ts' (timestamp)
     parseada correctamente y localizada en la zona horaria de Chile.
+    Maneja DST eliminando horas ambiguas/inexistentes (NaT).
     """
     # Renombrar columnas antes de procesar
     df.columns = [c.lower().strip().replace(' ', '_') for c in df.columns]
@@ -89,15 +90,17 @@ def ensure_ts_and_tz(df):
 
     df = df.dropna(subset=["ts"])
     
-    # Asegurar zona horaria
+    # --- CORRECCIÓN DE TIMEZONE ---
+    # Usamos la lógica de tu script de prueba para manejar DST:
+    # Marcar horas ambiguas (fall-back) o inexistentes (spring-forward) como NaT
     if df["ts"].dt.tz is None:
-        try:
-            df["ts"] = df["ts"].dt.tz_localize(TZ, ambiguous='infer')
-        except Exception as e:
-            print(f"Advirtiendo: No se pudo localizar zona horaria {TZ}. Usando UTC como fallback. Error: {e}")
-            df["ts"] = df["ts"].dt.tz_localize('UTC').dt.tz_convert(TZ)
+        df["ts"] = df["ts"].dt.tz_localize(TZ, ambiguous="NaT", nonexistent="NaT")
     else:
         df["ts"] = df["ts"].dt.tz_convert(TZ)
+        
+    # Eliminar las filas con fechas/horas inválidas (NaT)
+    df = df.dropna(subset=["ts"])
+    # --- FIN CORRECIÓN ---
         
     return df.sort_values("ts")
 
@@ -273,7 +276,7 @@ def process_future_climate(df_future_weather, df_baselines):
         df['ts'] = pd.to_datetime(df['ts'], errors='coerce')
     
     if df["ts"].dt.tz is None:
-        df["ts"] = df["ts"].dt.tz_localize(TZ, ambiguous='infer')
+        df["ts"] = df["ts"].dt.tz_localize(TZ, ambiguous="NaT", nonexistent="NaT")
     else:
         df["ts"] = df["ts"].dt.tz_convert(TZ)
         
@@ -431,31 +434,13 @@ def main(horizonte_dias):
         return
 
     # --- 2. Cargar Datos Históricos ---
-    print("\n--- Fase 2: Cargando y Filtrando Datos Históricos ---")
+    print("\n--- Fase 2: Cargando Datos Históricos ---")
     
-    # 1. Cargar TODOS los datos (históricos + futuros)
-    df_full_data = read_data(HOSTING_FILE)
-    df_full_data = ensure_ts_and_tz(df_full_data)
-
-    # --- !! INICIO DE LA LÓGICA DE CORTE (BACKTESTING) !! ---
-    # 2. Definir "hoy" (la fecha/hora actual del runner)
-    #    Usamos .floor('h') para empezar en la hora en punto (ej: 08:00:00)
-    cutoff_date = pd.Timestamp.now(TZ).floor('h')
-    print(f"  [Info] Fecha de corte (Cutoff) establecida en: {cutoff_date}")
-
-    # 3. Dividir el dataframe
-    #    df_hosting = Todos los datos ANTES de la hora actual
-    #    df_future_truth = Todos los datos DESPUÉS (para tu comparación manual)
-    df_hosting = df_full_data[df_full_data['ts'] < cutoff_date].copy()
-    df_future_truth = df_full_data[df_full_data['ts'] >= cutoff_date].copy()
-    
-    if df_hosting.empty:
-         print(f"  [ERROR] No hay datos históricos ANTES de la fecha de corte {cutoff_date}. Usando el archivo completo como histórico.")
-         df_hosting = df_full_data.copy()
-    else:
-         print(f"  [OK] Datos históricos (para 'seed') filtrados: {len(df_hosting)} filas.")
-         print(f"  [Info] Datos futuros (para comparativa) encontrados: {len(df_future_truth)} filas.")
-    # --- !! FIN DE LA LÓGICA DE CORTE !! ---
+    # --- !! LÓGICA RESTAURADA (CORRECTA) !! ---
+    # 1. Cargar TODOS los datos (históricos + futuros para validación)
+    df_hosting_full = read_data(HOSTING_FILE)
+    df_hosting = ensure_ts_and_tz(df_hosting_full)
+    # No filtramos por la hora del servidor, usamos el archivo completo.
 
     # Cargar Feriados (para unirlos antes de agrupar)
     df_feriados = read_data(FERIADOS_FILE)
@@ -485,10 +470,9 @@ def main(horizonte_dias):
     df_hosting = df_hosting.groupby("ts").agg({TARGET_CALLS: 'sum', 'feriados': 'max'}).reset_index()
     df_hosting = add_time_parts(df_hosting)
     
-    # Cargar Histórico de TMO (filtrado por la misma fecha de corte)
-    df_tmo_hist_full = read_data(TMO_FILE)
-    df_tmo_hist_full = ensure_ts_and_tz(df_tmo_hist_full)
-    df_tmo_hist = df_tmo_hist_full[df_tmo_hist_full['ts'] < cutoff_date].copy()
+    # Cargar Histórico de TMO (completo, sin filtrar)
+    df_tmo_hist = read_data(TMO_FILE)
+    df_tmo_hist = ensure_ts_and_tz(df_tmo_hist)
     
     # Calcular TMO general si no existe
     if TARGET_TMO not in df_tmo_hist.columns and all(c in df_tmo_hist.columns for c in ['tmo_comercial', 'q_comercial', 'tmo_tecnico', 'q_tecnico', 'q_general']):
@@ -503,12 +487,15 @@ def main(horizonte_dias):
         df_tmo_hist['proporcion_comercial'] = 0
         df_tmo_hist['proporcion_tecnica'] = 0
 
-    # Esta línea ahora toma el MÁXIMO del set de datos filtrado
+    # Esta línea ahora toma el MÁXIMO del set de datos completo
     last_hist_ts = df_hosting['ts'].max()
     print(f"  [OK] Datos históricos cargados. Último timestamp (real) usado como 'seed': {last_hist_ts}")
 
     # --- 3. Generar Esqueleto Futuro ---
     print("\n--- Fase 3: Generando Esqueleto de Fechas Futuras ---")
+    
+    # --- !! LÓGICA RESTAURADA (CORRECTA) !! ---
+    # El futuro SIEMPRE comienza 1 hora después de la última fecha en el archivo.
     start_future = last_hist_ts + pd.Timedelta(hours=1)
     end_future = start_future + pd.Timedelta(days=horizonte_dias)
     
@@ -552,7 +539,7 @@ def main(horizonte_dias):
     # --- 5. Pipeline Llamadas (Planificador) ---
     print("\n--- Fase 5: Pipeline de Llamadas (Planificador) ---")
     
-    # Combinar histórico (filtrado) + futuro (esqueleto) para calcular lags/MAs
+    # Combinar histórico (completo) + futuro (esqueleto) para calcular lags/MAs
     df_full = pd.concat([df_hosting, df_future], ignore_index=True).sort_values('ts')
     
     # Calcular features (lags y MAs) usando el histórico
@@ -583,7 +570,7 @@ def main(horizonte_dias):
     # --- 6. Pipeline de TMO (Analista de Operaciones) ---
     print("\n--- Fase 6: Pipeline de TMO (Analista de Operaciones) ---")
     
-    # Obtener "semillas" (seeds) del último dato de TMO histórico (filtrado)
+    # Obtener "semillas" (seeds) del último dato de TMO histórico (completo)
     if df_tmo_hist.empty:
         print("  [Adv] TMO_HISTORICO.csv está vacío o no cargó. Usando semillas TMO=0.")
         last_tmo_data = pd.Series(dtype='float64')
