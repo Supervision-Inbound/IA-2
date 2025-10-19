@@ -22,10 +22,10 @@ HOSTING_FILE = os.path.join(DATA_DIR, "historical_data.csv"); TMO_FILE = os.path
 TARGET_CALLS = "recibidos_nacional"; TARGET_TMO = "tmo_general"
 
 # Parámetros de Post-Procesamiento (de inferencia_core.py)
-K_MAD_WEEKDAY = 6.0
-K_MAD_WEEKEND = 7.0
-RECALIBRATE_WEEKS = 8
-HIST_WINDOW_DAYS = 90
+K_MAD_WEEKDAY = 6.0 # Valor de tu script
+K_MAD_WEEKEND = 7.0 # Valor de tu script
+RECALIBRATE_WEEKS = 8 # Semanas para recalibración estacional
+HIST_WINDOW_DAYS = 90 # Ventana de historial para iteración (de inferencia_core.py)
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'; warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl'); warnings.filterwarnings('ignore', category=FutureWarning)
 pd.options.mode.chained_assignment = None # default='warn'
@@ -75,6 +75,7 @@ def add_time_features(df):
     df_copy["sin_woy"] = np.sin(2 * np.pi * df_copy["woy"] / 52); df_copy["cos_woy"] = np.cos(2 * np.pi * df_copy["woy"] / 52)
     return df_copy
 
+# --- Corrección v29.1 (KeyError: 'key_0') ---
 def add_holiday_distance_features(df, holidays_set):
     df_copy = df.copy()
     if holidays_set is None or not holidays_set:
@@ -93,6 +94,7 @@ def add_holiday_distance_features(df, holidays_set):
     df_copy.drop(columns=['merge_date', 'date'], inplace=True, errors='ignore')
     df_copy["dias_desde_feriado"].fillna(99, inplace=True); df_copy["dias_hasta_feriado"].fillna(99, inplace=True); df_copy["es_pre_feriado"] = (df_copy["dias_hasta_feriado"] == 1).astype(int)
     return df_copy
+# --- Fin Corrección ---
 
 def add_payment_date_features(df):
     df_copy = df.copy()
@@ -428,7 +430,7 @@ def main(horizonte_dias):
     
     # Clima se añade en Fase 7 (antes de TMO)
          
-    X_tmo_base = df_tmo_features_future.reindex(columns=cols_tmo, fill_value=0) # Reindexar ANTES de clima
+    X_tmo_base = df_tmo_features_future.copy() # Copiar ANTES de reindexar
     
     # --- 7. Pipeline Clima ---
     print("\n--- Fase 7: Pipeline de Clima (Analista de Riesgos) ---")
@@ -439,15 +441,16 @@ def main(horizonte_dias):
     df_future[numeric_cols_future] = df_future[numeric_cols_future].fillna(df_future[numeric_cols_future].mean()); df_future = df_future.fillna(0)
     
     # Añadir features de clima al set de TMO
-    df_tmo_features_future = pd.merge(X_tmo_base, df_future, on='ts', how='left', suffixes=('_x', None))
+    # Usar X_tmo_base que no ha sido reindexada aún
+    df_tmo_features_future_with_clima = pd.merge(X_tmo_base, df_future, on='ts', how='left', suffixes=('_x', None))
     # Seleccionar solo las columnas que REALMENTE están en cols_tmo
-    df_tmo_features_future = df_tmo_features_future.reindex(columns=cols_tmo, fill_value=0)
+    df_tmo_features_future_with_clima = df_tmo_features_future_with_clima.reindex(columns=cols_tmo, fill_value=0)
 
     # Añadir features de riesgo a df_future (para el modelo de riesgo)
     df_future_with_risk_features = add_holiday_distance_features(df_future.copy(), holidays_set)
     df_future_with_risk_features = add_payment_date_features(df_future_with_risk_features)
     
-    if cols_risk and all(c in df_future_with_risk_features.reindex(columns=cols_risk, fill_value=0).columns for c in cols_risk):
+    if cols_risk: # Solo si cols_risk no está vacío
         X_risk = df_future_with_risk_features.reindex(columns=cols_risk, fill_value=0); X_risk_s = scaler_risk.transform(X_risk)
         df_future['risk_proba'] = model_risk.predict(X_risk_s); print("  [OK] Predicciones riesgo generadas.")
     else: print("  [Adv] Faltan columnas/config risk. 'risk_proba'=0."); df_future['risk_proba'] = 0.0
@@ -456,9 +459,9 @@ def main(horizonte_dias):
     # --- Re-ejecutar TMO ahora CON features de clima ---
     print("  Re-calculando predicción TMO con features de clima...")
     # (Re-llenar NaNs y escalar)
-    numeric_cols_tmo = df_tmo_features_future.select_dtypes(include=np.number).columns
-    means_tmo = df_tmo_features_future[numeric_cols_tmo].mean(); df_tmo_features_future[numeric_cols_tmo] = df_tmo_features_future[numeric_cols_tmo].fillna(means_tmo).fillna(0)
-    X_tmo_s = scaler_tmo.transform(df_tmo_features_future)
+    numeric_cols_tmo = df_tmo_features_future_with_clima.select_dtypes(include=np.number).columns
+    means_tmo = df_tmo_features_future_with_clima[numeric_cols_tmo].mean(); df_tmo_features_future_with_clima[numeric_cols_tmo] = df_tmo_features_future_with_clima[numeric_cols_tmo].fillna(means_tmo).fillna(0)
+    X_tmo_s = scaler_tmo.transform(df_tmo_features_future_with_clima)
     df_future['tmo_hora'] = model_tmo.predict(X_tmo_s).clip(0) # <-- Float
     print("  [OK] Predicciones BASE TMO (MLP v28) generadas.")
 
