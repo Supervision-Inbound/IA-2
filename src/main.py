@@ -73,14 +73,17 @@ def ensure_ts_and_tz(df):
     Asegura que el DataFrame tenga una columna 'ts' (timestamp)
     parseada correctamente y localizada en la zona horaria de Chile.
     """
+    # Renombrar columnas antes de procesar
     df.columns = [c.lower().strip().replace(' ', '_') for c in df.columns]
+    
     date_col = next((c for c in df.columns if 'fecha' in c), None)
     hour_col = next((c for c in df.columns if 'hora' in c), None)
     
     if 'ts' not in df.columns:
         if not date_col or not hour_col:
             raise ValueError("No se encontraron 'fecha' y 'hora' o 'ts' en el DataFrame.")
-        df["ts"] = pd.to_datetime(df[date_col].astype(str) + ' ' + df[hour_col].astype(str), errors='coerce')
+        # Usar formato explícito basado en tu archivo
+        df["ts"] = pd.to_datetime(df[date_col] + ' ' + df[hour_col], format='%d-%m-%Y %H:%M:%S', errors='coerce')
     else:
         df["ts"] = pd.to_datetime(df["ts"], errors='coerce')
 
@@ -428,25 +431,43 @@ def main(horizonte_dias):
         return
 
     # --- 2. Cargar Datos Históricos ---
-    print("\n--- Fase 2: Cargando Datos Históricos ---")
+    print("\n--- Fase 2: Cargando y Filtrando Datos Históricos ---")
     
-    # Cargar Histórico de Llamadas (Hosting)
-    df_hosting = read_data(HOSTING_FILE)
-    df_hosting = ensure_ts_and_tz(df_hosting)
-    df_hosting = df_hosting.rename(columns={'recibidos': TARGET_CALLS})
+    # 1. Cargar TODOS los datos (históricos + futuros)
+    df_full_data = read_data(HOSTING_FILE)
+    df_full_data = ensure_ts_and_tz(df_full_data)
+
+    # --- !! INICIO DE LA LÓGICA DE CORTE (BACKTESTING) !! ---
+    # 2. Definir "hoy" (la fecha/hora actual del runner)
+    #    Usamos .floor('h') para empezar en la hora en punto (ej: 08:00:00)
+    cutoff_date = pd.Timestamp.now(TZ).floor('h')
+    print(f"  [Info] Fecha de corte (Cutoff) establecida en: {cutoff_date}")
+
+    # 3. Dividir el dataframe
+    #    df_hosting = Todos los datos ANTES de la hora actual
+    #    df_future_truth = Todos los datos DESPUÉS (para tu comparación manual)
+    df_hosting = df_full_data[df_full_data['ts'] < cutoff_date].copy()
+    df_future_truth = df_full_data[df_full_data['ts'] >= cutoff_date].copy()
     
+    if df_hosting.empty:
+         print(f"  [ERROR] No hay datos históricos ANTES de la fecha de corte {cutoff_date}. Usando el archivo completo como histórico.")
+         df_hosting = df_full_data.copy()
+    else:
+         print(f"  [OK] Datos históricos (para 'seed') filtrados: {len(df_hosting)} filas.")
+         print(f"  [Info] Datos futuros (para comparativa) encontrados: {len(df_future_truth)} filas.")
+    # --- !! FIN DE LA LÓGICA DE CORTE !! ---
+
     # Cargar Feriados (para unirlos antes de agrupar)
     df_feriados = read_data(FERIADOS_FILE)
     
-    # --- INICIO DE LA CORRECCIÓN ---
     # La columna en el CSV es 'Fecha' (Mayúscula)
-    # Convertimos 'Fecha' a datetime y luego a formato .date
     try:
+        # Intentar parsear con formato específico
         df_feriados['fecha_dt'] = pd.to_datetime(df_feriados['Fecha'], format='%d-%m-%Y').dt.date
     except Exception as e:
         print(f"  [Adv] Falló al parsear 'Fecha' con formato dd-mm-yyyy ({e}). Reintentando formato auto.")
+        # Reintentar con parseo automático
         df_feriados['fecha_dt'] = pd.to_datetime(df_feriados['Fecha']).dt.date
-    # --- FIN DE LA CORRECCIÓN ---
     
     feriados_list = set(df_feriados['fecha_dt'])
 
@@ -455,12 +476,19 @@ def main(horizonte_dias):
         print("  [Adv] 'feriados' no está en historical_data.csv. Se creará desde Feriados_Chilev2.csv.")
         df_hosting['feriados'] = df_hosting['ts'].dt.date.isin(feriados_list).astype(int)
     
+    # Renombrar 'recibidos' (de historical_data.csv) a 'recibidos_nacional'
+    if 'recibidos' in df_hosting.columns and TARGET_CALLS not in df_hosting.columns:
+         df_hosting = df_hosting.rename(columns={'recibidos': TARGET_CALLS})
+    elif TARGET_CALLS not in df_hosting.columns:
+        raise ValueError(f"No se encontró la columna {TARGET_CALLS} ni 'recibidos' en historical_data.csv")
+
     df_hosting = df_hosting.groupby("ts").agg({TARGET_CALLS: 'sum', 'feriados': 'max'}).reset_index()
     df_hosting = add_time_parts(df_hosting)
     
-    # Cargar Histórico de TMO
-    df_tmo_hist = read_data(TMO_FILE)
-    df_tmo_hist = ensure_ts_and_tz(df_tmo_hist)
+    # Cargar Histórico de TMO (filtrado por la misma fecha de corte)
+    df_tmo_hist_full = read_data(TMO_FILE)
+    df_tmo_hist_full = ensure_ts_and_tz(df_tmo_hist_full)
+    df_tmo_hist = df_tmo_hist_full[df_tmo_hist_full['ts'] < cutoff_date].copy()
     
     # Calcular TMO general si no existe
     if TARGET_TMO not in df_tmo_hist.columns and all(c in df_tmo_hist.columns for c in ['tmo_comercial', 'q_comercial', 'tmo_tecnico', 'q_tecnico', 'q_general']):
@@ -475,8 +503,9 @@ def main(horizonte_dias):
         df_tmo_hist['proporcion_comercial'] = 0
         df_tmo_hist['proporcion_tecnica'] = 0
 
+    # Esta línea ahora toma el MÁXIMO del set de datos filtrado
     last_hist_ts = df_hosting['ts'].max()
-    print(f"  [OK] Datos históricos cargados. Último timestamp: {last_hist_ts}")
+    print(f"  [OK] Datos históricos cargados. Último timestamp (real) usado como 'seed': {last_hist_ts}")
 
     # --- 3. Generar Esqueleto Futuro ---
     print("\n--- Fase 3: Generando Esqueleto de Fechas Futuras ---")
@@ -523,7 +552,7 @@ def main(horizonte_dias):
     # --- 5. Pipeline Llamadas (Planificador) ---
     print("\n--- Fase 5: Pipeline de Llamadas (Planificador) ---")
     
-    # Combinar histórico + futuro para calcular lags/MAs
+    # Combinar histórico (filtrado) + futuro (esqueleto) para calcular lags/MAs
     df_full = pd.concat([df_hosting, df_future], ignore_index=True).sort_values('ts')
     
     # Calcular features (lags y MAs) usando el histórico
@@ -554,7 +583,7 @@ def main(horizonte_dias):
     # --- 6. Pipeline de TMO (Analista de Operaciones) ---
     print("\n--- Fase 6: Pipeline de TMO (Analista de Operaciones) ---")
     
-    # Obtener "semillas" (seeds) del último dato de TMO histórico
+    # Obtener "semillas" (seeds) del último dato de TMO histórico (filtrado)
     if df_tmo_hist.empty:
         print("  [Adv] TMO_HISTORICO.csv está vacío o no cargó. Usando semillas TMO=0.")
         last_tmo_data = pd.Series(dtype='float64')
