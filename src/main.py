@@ -55,6 +55,7 @@ def ensure_ts_and_tz(df):
 # add_time_parts (v7)
 def add_time_parts(df):
     df_copy = df.copy()
+    if 'ts' not in df_copy.columns: raise KeyError("add_time_parts requiere columna 'ts'")
     df_copy["dow"] = df_copy["ts"].dt.dayofweek
     df_copy["month"] = df_copy["ts"].dt.month
     df_copy["hour"] = df_copy["ts"].dt.hour
@@ -127,30 +128,57 @@ def apply_seasonal_weights(df_future, weights, col_name="pred_llamadas"):
     w = np.array([weights.get(key, 1.0) for key in idx], dtype=float)
     df[col_name] = (df[col_name].astype(float) * w); return df
 
+# --- AJUSTE v27.4: Corregir KeyError: 'mediana' ---
 def baseline_from_history(df_hist, col):
     print(f"  Calculando baselines robustos (MAD, q95) para '{col}'...")
     if df_hist.empty or col not in df_hist.columns or 'ts' not in df_hist.columns:
         print("  [Advertencia] Histórico vacío o sin 'ts'/'target_col'. No baselines MAD."); return pd.DataFrame()
+    
     d = add_time_parts(df_hist[['ts', col]].copy())
-    g = d.groupby(["dow", "hour"])[col]; base = g.median().rename("med").to_frame()
-    median_map = base['med'].to_dict()
+    grouped = d.groupby(["dow", "hour"])[col]
+    
+    # Crear un índice base con todas las 168 combinaciones
+    idx = pd.MultiIndex.from_product([range(7), range(24)], names=['dow', 'hour'])
+    base = pd.DataFrame(index=idx)
+
+    # Calcular medianas y unir a la base
+    mediana_g = grouped.median().rename("mediana")
+    base = base.join(mediana_g, how='left')
+    
+    # Calcular MAD
+    median_map = base['mediana'].to_dict()
     def mad_calc(x):
-        med = median_map.get(x.name, np.nan)
+        med = median_map.get(x.name, np.nan) # x.name es (dow, hour)
         if pd.isna(med): return np.nan
         return np.median(np.abs(x - med))
-    base['mad'] = g.apply(mad_calc); base['q95'] = g.quantile(0.95)
-    global_mad_median = base['mad'].median(); global_q95_median = base['q95'].median()
+    base['mad'] = grouped.apply(mad_calc)
+    
+    # Calcular q95
+    base['q95'] = grouped.quantile(0.95)
+
+    # Rellenar NaNs con medianas globales (calculadas sobre las series agrupadas)
+    global_mad_median = base['mad'].median()
+    global_q95_median = base['q95'].median()
+    global_median = d[col].median() # Mediana global de todos los datos
+
+    base['mediana'].fillna(global_median, inplace=True)
     base['mad'].fillna(global_mad_median if not pd.isna(global_mad_median) else 1.0, inplace=True)
-    base['q95'].fillna(global_q95_median if not pd.isna(global_q95_median) else base['med'], inplace=True)
-    base['mediana'].fillna(d[col].median(), inplace=True); base['mad'] = np.maximum(base['mad'], 1e-6)
+    # Rellenar q95 con la mediana (ahora rellena) si q95 sigue NaN
+    base['q95'].fillna(global_q95_median if not pd.isna(global_q95_median) else base['mediana'], inplace=True)
+    base['mad'] = np.maximum(base['mad'], 1e-6) # Evitar MAD=0
+    
     return base.reset_index()
+# --- Fin Ajuste ---
 
 def apply_peak_smoothing_history(df_future, col, base, k_weekday=K_MAD_WEEKDAY, k_weekend=K_MAD_WEEKEND):
     df = df_future.copy()
     if base.empty: print("    [Advertencia] Baselines vacíos. Omitiendo capping MAD."); return df
     if 'dow' not in df.columns: df = add_time_parts(df)
     df_merged = pd.merge(df, base, on=['dow', 'hour'], how='left')
-    df_merged['mediana'].fillna(base['mediana'].mean(), inplace=True); df_merged['mad'].fillna(base['mad'].mean(), inplace=True); df_merged['q95'].fillna(base['q95'].mean(), inplace=True)
+    # Rellenar NaNs si alguna combinación futura no estaba en baselines (no debería pasar con el fix)
+    df_merged['mediana'].fillna(base['mediana'].mean(), inplace=True)
+    df_merged['mad'].fillna(base['mad'].mean(), inplace=True)
+    df_merged['q95'].fillna(base['q95'].mean(), inplace=True)
     K = np.where(df_merged["dow"].isin([5, 6]), k_weekend, k_weekday).astype(float)
     upper_cap = df_merged["mediana"].values + K * df_merged["mad"].values
     mask = (df_merged[col].astype(float).values > upper_cap) & (df_merged[col].astype(float).values > df_merged["q95"].values)
@@ -256,7 +284,7 @@ def generate_alerts_json(df_per_comuna, df_risk_proba, proba_threshold=0.5, impa
 # --- FUNCIÓN PRINCIPAL ORQUESTADORA ---
 
 def main(horizonte_dias):
-    print("="*60); print(f"INICIANDO PIPELINE DE INFERENCIA (v_main 27.3 - MLP Base + Post-Proceso)"); print(f"Zona Horaria: {TZ} | Horizonte: {horizonte_dias} días"); print("="*60) # v27.3
+    print("="*60); print(f"INICIANDO PIPELINE DE INFERENCIA (v_main 27.4 - MLP Base + Post-Proceso)"); print(f"Zona Horaria: {TZ} | Horizonte: {horizonte_dias} días"); print("="*60) # v27.4
 
     # --- 1. Cargar Modelos y Artefactos (v7) ---
     print("\n--- Fase 1: Cargando Modelos y Artefactos (v7) ---")
@@ -265,10 +293,10 @@ def main(horizonte_dias):
         with open(PLANNER_COLS_FILE, 'r') as f: cols_planner = json.load(f)
         model_risk = tf.keras.models.load_model(RISK_MODEL_FILE); scaler_risk = joblib.load(RISK_SCALER_FILE)
         
-        # --- AJUSTE v27.3: Corrección indentación ---
+        # --- Corrección indentación ---
         try:
             with open(RISK_COLS_FILE, 'r') as f: cols_risk = json.load(f)
-        except FileNotFoundError: # <-- Indentación Correcta
+        except FileNotFoundError: 
             print(f"  [Adv] {RISK_COLS_FILE} no encontrado."); cols_risk = []
         # --- Fin Ajuste ---
 
