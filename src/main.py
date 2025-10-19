@@ -1,3 +1,4 @@
+# (Imports y configuración global sin cambios...)
 import os
 import argparse
 import json
@@ -11,56 +12,40 @@ import tensorflow.keras.backend as K # Para Quantile Loss
 # --- CONFIGURACIÓN GLOBAL ---
 TZ = 'America/Santiago'
 os.environ['TZ'] = TZ
-
-# Definición de rutas relativas
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
 DATA_DIR = os.path.join(ROOT_DIR, "data")
 MODEL_DIR = os.path.join(ROOT_DIR, "models")
 PUBLIC_DIR = os.path.join(ROOT_DIR, "public")
-
-# Nombres de archivos de artefactos (v18 - LSTM)
 PLANNER_MODEL_FILE = os.path.join(MODEL_DIR, "modelo_planner.keras")
 PLANNER_SCALER_FILE = os.path.join(MODEL_DIR, "scaler_planner.pkl")
 PLANNER_COLS_FILE = os.path.join(MODEL_DIR, "training_columns_planner.json")
-
 RISK_MODEL_FILE = os.path.join(MODEL_DIR, "modelo_riesgos.keras")
 RISK_SCALER_FILE = os.path.join(MODEL_DIR, "scaler_riesgos.pkl")
 RISK_COLS_FILE = os.path.join(MODEL_DIR, "training_columns_riesgos.json")
 RISK_BASELINES_FILE = os.path.join(MODEL_DIR, "baselines_clima.pkl")
-
 TMO_MODEL_FILE = os.path.join(MODEL_DIR, "modelo_tmo.keras")
 TMO_SCALER_FILE = os.path.join(MODEL_DIR, "scaler_tmo.pkl")
 TMO_COLS_FILE = os.path.join(MODEL_DIR, "training_columns_tmo.json")
-
-# Nombres de archivos de datos
 HOSTING_FILE = os.path.join(DATA_DIR, "historical_data.csv")
 TMO_FILE = os.path.join(DATA_DIR, "TMO_HISTORICO.csv")
 FERIADOS_FILE = os.path.join(DATA_DIR, "Feriados_Chilev2.csv")
-CLIMA_HIST_FILE = os.path.join(DATA_DIR, "historical_data.csv") # Se usa para simular clima
-
+CLIMA_HIST_FILE = os.path.join(DATA_DIR, "historical_data.csv")
 TARGET_CALLS = "recibidos_nacional"
 TARGET_TMO = "tmo_general"
-
-# --- Cuantil y Pasos LSTM (Deben coincidir con entrenamiento v18) ---
 QUANTILE_P = 0.65
-N_STEPS = 24 # <-- AJUSTE v18.1
-
-# Suprimir advertencias
+N_STEPS = 24
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 warnings.filterwarnings('ignore', category=FutureWarning)
 
-# --- Función Quantile Loss (Necesaria para cargar modelos) ---
 def quantile_loss(q):
     def loss(y_true, y_pred): e = y_true - y_pred; return K.mean(K.maximum(q * e, (q - 1) * e), axis=-1)
     return loss
-# --- Fin ---
-
 
 # --- FUNCIONES DE UTILIDAD ---
-# (read_data, ensure_ts_and_tz, add_time_parts, normalize_climate_columns, calculate_erlang_agents - Sin cambios)
 def read_data(path, hoja=None):
+    # (Sin cambios)
     path_lower = path.lower()
     if not os.path.exists(path): raise FileNotFoundError(f"No encontrado: {path}.")
     if path_lower.endswith(".csv"):
@@ -76,6 +61,7 @@ def read_data(path, hoja=None):
     else: raise ValueError(f"Formato no soportado: {path}")
 
 def ensure_ts_and_tz(df):
+    # (Sin cambios)
     df.columns = [c.lower().strip().replace(' ', '_') for c in df.columns]
     date_col = next((c for c in df.columns if 'fecha' in c), None); hour_col = next((c for c in df.columns if 'hora' in c), None)
     if not date_col or not hour_col: raise ValueError("No se encontraron 'fecha' y 'hora'.")
@@ -88,15 +74,33 @@ def ensure_ts_and_tz(df):
     return df.sort_values("ts")
 
 def add_time_parts(df):
-    df_copy = df.copy(); df_copy["dow"] = df_copy["ts"].dt.dayofweek; df_copy["month"] = df_copy["ts"].dt.month; df_copy["hour"] = df_copy["ts"].dt.hour; df_copy["day"] = df_copy["ts"].dt.day
-    df_copy["semana_del_mes"] = (df_copy["day"] - 1) // 7 + 1; df_copy["es_domingo"] = (df_copy["dow"] == 6).astype(int); df_copy["es_madrugada"] = (df_copy["hour"] < 6).astype(int)
-    df_copy["es_navidad"] = ((df_copy["month"] == 12) & (df_copy["day"] == 25)).astype(int); df_copy["es_ano_nuevo"] = ((df_copy["month"] == 1) & (df_copy["day"] == 1)).astype(int)
+    """Agrega características temporales y cíclicas a un DataFrame con columna 'ts'."""
+    df_copy = df.copy()
+    df_copy["dow"] = df_copy["ts"].dt.dayofweek
+    df_copy["month"] = df_copy["ts"].dt.month
+    df_copy["hour"] = df_copy["ts"].dt.hour
+    df_copy["day"] = df_copy["ts"].dt.day
+    df_copy["semana_del_mes"] = (df_copy["day"] - 1) // 7 + 1
+
+    # --- AJUSTE v18.2: Añadir es_dia_de_pago aquí ---
+    df_copy["es_dia_de_pago"] = df_copy['day'].isin([1, 2, 15, 16, 29, 30, 31]).astype(int)
+    # --- Fin ---
+
+    # Features v15/v18
+    df_copy["es_domingo"] = (df_copy["dow"] == 6).astype(int)
+    df_copy["es_madrugada"] = (df_copy["hour"] < 6).astype(int)
+    df_copy["es_navidad"] = ((df_copy["month"] == 12) & (df_copy["day"] == 25)).astype(int)
+    df_copy["es_ano_nuevo"] = ((df_copy["month"] == 1) & (df_copy["day"] == 1)).astype(int)
     df_copy["es_fiestas_patrias"] = ((df_copy["month"] == 9) & (df_copy["day"].isin([18, 19]))).astype(int)
-    df_copy["sin_hour"] = np.sin(2 * np.pi * df_copy["hour"] / 24); df_copy["cos_hour"] = np.cos(2 * np.pi * df_copy["hour"] / 24)
-    df_copy["sin_dow"] = np.sin(2 * np.pi * df_copy["dow"] / 7); df_copy["cos_dow"] = np.cos(2 * np.pi * df_copy["dow"] / 7)
     # Dia despues feriado se calcula después
+
+    df_copy["sin_hour"] = np.sin(2 * np.pi * df_copy["hour"] / 24)
+    df_copy["cos_hour"] = np.cos(2 * np.pi * df_copy["hour"] / 24)
+    df_copy["sin_dow"] = np.sin(2 * np.pi * df_copy["dow"] / 7)
+    df_copy["cos_dow"] = np.cos(2 * np.pi * df_copy["dow"] / 7)
     return df_copy
 
+# (normalize_climate_columns, calculate_erlang_agents - sin cambios)
 def normalize_climate_columns(df: pd.DataFrame) -> pd.DataFrame:
     column_map = {'temperatura': ['temperature_2m', 'temperatura', 'temp', 'temp_2m'], 'precipitacion': ['precipitation', 'precipitacion', 'precipitación', 'rain_mm', 'rain'], 'lluvia': ['rain', 'lluvia', 'rainfall']}
     df_renamed = df.copy(); df_renamed.columns = [c.lower().strip().replace(' ', '_') for c in df_renamed.columns]
@@ -104,55 +108,23 @@ def normalize_climate_columns(df: pd.DataFrame) -> pd.DataFrame:
         for name in poss:
             if name in df_renamed.columns: df_renamed.rename(columns={name: std}, inplace=True); break
     return df_renamed
-
 def calculate_erlang_agents(calls_per_hour, tmo_seconds, occupancy_target=0.85):
     if calls_per_hour.sum() == 0: return pd.Series(0, index=calls_per_hour.index)
     traffic_intensity = (calls_per_hour * tmo_seconds) / 3600; agents = np.ceil(traffic_intensity / occupancy_target)
     agents[traffic_intensity > 0] = agents[traffic_intensity > 0].apply(lambda x: max(x, 1)); return agents.astype(int)
 
 
-# --- AJUSTE v18.1: Nueva función para crear secuencias en INFERENCIA ---
+# (create_inference_sequences - sin cambios desde v18.1)
 def create_inference_sequences(historical_scaled_context, future_scaled_data, time_steps=N_STEPS):
-    """
-    Crea secuencias 3D para la inferencia LSTM.
-    Usa el contexto histórico + datos futuros escalados.
-    Input:
-        historical_scaled_context (time_steps-1, n_features): Últimos N-1 puntos históricos escalados.
-        future_scaled_data (n_future_steps, n_features): Datos futuros escalados.
-    Output:
-        Xs (n_future_steps, time_steps, n_features): Tensor 3D listo para model.predict()
-    """
-    n_future_steps = future_scaled_data.shape[0]
-    n_features = future_scaled_data.shape[1]
-
-    # Combina el contexto histórico con el futuro
-    # La forma será ( (time_steps-1) + n_future_steps, n_features )
+    n_future_steps = future_scaled_data.shape[0]; n_features = future_scaled_data.shape[1]
     combined_data = np.vstack((historical_scaled_context, future_scaled_data))
-
     Xs = []
-    # Itera para crear cada secuencia de entrada para el futuro
-    for i in range(n_future_steps):
-        # La ventana empieza 'time_steps' pasos ANTES del punto actual en combined_data
-        # El índice en combined_data correspondiente al primer paso futuro es (time_steps - 1)
-        # Por lo tanto, para predecir el paso futuro 'i', necesitamos la ventana que termina en (time_steps - 1 + i - 1)
-        start_index = i
-        end_index = start_index + time_steps
-        window = combined_data[start_index:end_index]
-        Xs.append(window)
-
-    # Verifica si se crearon secuencias
-    if not Xs:
-         # Esto puede pasar si n_future_steps es 0 o si hay algún error de índice
-         # Devolver un array vacío con la forma correcta
-         return np.empty((0, time_steps, n_features))
-
-
+    for i in range(n_future_steps): start_index = i; end_index = start_index + time_steps; window = combined_data[start_index:end_index]; Xs.append(window)
+    if not Xs: return np.empty((0, time_steps, n_features))
     return np.array(Xs)
-# --- Fin del Ajuste ---
-
 
 # --- FUNCIONES DEL PIPELINE DE INFERENCIA ---
-# (fetch_future_weather, process_future_climate, generate_alerts_json - Sin cambios desde v14.1)
+# (fetch_future_weather, process_future_climate, generate_alerts_json - sin cambios)
 def fetch_future_weather(start_date, end_date):
     print("    [Clima] SIMULANDO API de clima futuro...")
     try: df_hist = read_data(CLIMA_HIST_FILE)
@@ -182,8 +154,8 @@ def process_future_climate(df_future_weather, df_baselines):
     if df["ts"].dt.tz is None: df["ts"] = df["ts"].dt.tz_localize(TZ, ambiguous="NaT", nonexistent="NaT")
     else: df["ts"] = df["ts"].dt.tz_convert(TZ)
     df = df.dropna(subset=['ts']).sort_values(['comuna', 'ts']); df['dow'] = df['ts'].dt.dayofweek; df['hour'] = df['ts'].dt.hour
-    if df_baselines.empty: print("    [Clima] Adv: Baselines vacíos, anomalías serán 0."); df_merged = df.copy(); df_merged['temperatura_median'] = 0; df_merged['temperatura_std'] = 1 # Etc for others
-    else: df_merged = pd.merge(df, df_baselines, on=['comuna', 'dow', 'hour'], how='left')
+    if df_baselines.empty: print("    [Clima] Adv: Baselines vacíos, anomalías serán 0."); df_merged = df.copy(); df_merged['temperatura_median'] = 0; df_merged['temperatura_std'] = 1 # Etc
+    else: df_merged = pd.merge(df, df_baselines, on=['comuna', 'dow', 'hour'], how='left') # v14.1 fix
     numeric_cols = df_merged.select_dtypes(include=np.number).columns; df_merged[numeric_cols] = df_merged[numeric_cols].fillna(df_merged[numeric_cols].mean())
     expected_metrics = [c for c in ['temperatura', 'precipitacion', 'lluvia'] if c in df.columns]; anomaly_cols = []
     for metric in expected_metrics:
@@ -193,11 +165,10 @@ def process_future_climate(df_future_weather, df_baselines):
         anomaly_cols.append(anomaly_col_name)
     df_per_comuna_anomalies = df_merged[['ts', 'comuna'] + anomaly_cols + expected_metrics].copy(); n_comunas = max(1, df_merged['comuna'].nunique())
     agg_functions = {};
-    for col in anomaly_cols: agg_functions[col] = ['max', 'sum', lambda x, nc=n_comunas: (x > 2.5).sum() / nc if nc > 0 else 0] # Pasar n_comunas a lambda
-    if not agg_functions: print("    [Clima] ADV: No se generaron funcs agregación."); df_agregado = pd.DataFrame({'ts': df_merged['ts'].unique()}) # Crear con columna ts
+    for col in anomaly_cols: agg_functions[col] = ['max', 'sum', lambda x, nc=n_comunas: (x > 2.5).sum() / nc if nc > 0 else 0]
+    if not agg_functions: print("    [Clima] ADV: No se generaron funcs agregación."); df_agregado = pd.DataFrame({'ts': df_merged['ts'].unique()})
     else:
-        df_agregado = df_merged.groupby('ts').agg(agg_functions).reset_index()
-        new_cols = ['ts'];
+        df_agregado = df_merged.groupby('ts').agg(agg_functions).reset_index(); new_cols = ['ts'];
         for col in df_agregado.columns[1:]: agg_name = col[1] if col[1] != '<lambda_0>' else 'pct_comunas_afectadas'; new_cols.append(f"{col[0]}_{agg_name}")
         df_agregado.columns = new_cols
     print("    [Clima] Cálculo anomalías completado."); return df_agregado, df_per_comuna_anomalies
@@ -218,43 +189,30 @@ def generate_alerts_json(df_per_comuna, df_risk_proba, proba_threshold=0.5, impa
             json_output.append(alerta)
     return json_output
 
-
 # --- FUNCIÓN PRINCIPAL ORQUESTADORA ---
 
 def main(horizonte_dias):
-    print("="*60); print(f"INICIANDO PIPELINE DE INFERENCIA (v_main 18.1 - LSTM)"); print(f"Zona Horaria: {TZ} | Horizonte: {horizonte_dias} días"); print("="*60)
+    print("="*60); print(f"INICIANDO PIPELINE DE INFERENCIA (v_main 18.2 - LSTM)"); print(f"Zona Horaria: {TZ} | Horizonte: {horizonte_dias} días"); print("="*60) # v18.2
 
     # --- 1. Cargar Modelos y Artefactos ---
     print("\n--- Fase 1: Cargando Modelos y Artefactos ---")
     try:
-        # --- AJUSTE v18.1: Cargar modelos LSTM con custom_objects ---
         custom_objects_dict = {'loss': quantile_loss(q=QUANTILE_P)}
         model_planner = tf.keras.models.load_model(PLANNER_MODEL_FILE, custom_objects=custom_objects_dict)
         scaler_planner = joblib.load(PLANNER_SCALER_FILE)
         with open(PLANNER_COLS_FILE, 'r') as f: cols_planner = json.load(f)
-
-        # Risk model sigue siendo MLP (o fallback a MLP en entreno v18), no necesita custom_objects aquí
-        model_risk = tf.keras.models.load_model(RISK_MODEL_FILE)
+        model_risk = tf.keras.models.load_model(RISK_MODEL_FILE) # Risk no necesita custom objects
         scaler_risk = joblib.load(RISK_SCALER_FILE)
-        # Cargar cols_risk de forma segura
         try:
             with open(RISK_COLS_FILE, 'r') as f: cols_risk = json.load(f)
-        except FileNotFoundError:
-             print(f"  [Adv] {RISK_COLS_FILE} no encontrado. Risk pipeline podría fallar."); cols_risk = []
-
-
+        except FileNotFoundError: print(f"  [Adv] {RISK_COLS_FILE} no encontrado."); cols_risk = []
         try: baselines_clima = joblib.load(RISK_BASELINES_FILE)
         except FileNotFoundError: print(f"  [Adv] {RISK_BASELINES_FILE} no encontrado."); baselines_clima = pd.DataFrame()
-
-        # TMO model sí es LSTM
         model_tmo = tf.keras.models.load_model(TMO_MODEL_FILE, custom_objects=custom_objects_dict)
         scaler_tmo = joblib.load(TMO_SCALER_FILE)
         with open(TMO_COLS_FILE, 'r') as f: cols_tmo = json.load(f)
-        # --- Fin del Ajuste ---
-
         print("  [OK] Todos los modelos, scalers y columnas cargados.")
-    except Exception as e:
-        print(f"  [ERROR] Falla crítica al cargar artefactos: {e}"); print("  Asegúrate que archivos existan en 'models/' y release 'AI-2'."); return
+    except Exception as e: print(f"  [ERROR] Falla crítica al cargar artefactos: {e}"); print("  Asegúrate que archivos existan en 'models/' y release 'AI-2'."); return
 
     # --- 2. Cargar Datos Históricos ---
     print("\n--- Fase 2: Cargando Datos Históricos ---")
@@ -269,41 +227,33 @@ def main(horizonte_dias):
     if 'recibidos' in df_hosting.columns and TARGET_CALLS not in df_hosting.columns: df_hosting = df_hosting.rename(columns={'recibidos': TARGET_CALLS})
     elif TARGET_CALLS not in df_hosting.columns: raise ValueError(f"No se encontró {TARGET_CALLS} ni 'recibidos'.")
     df_hosting_agg = df_hosting.groupby("ts").agg({TARGET_CALLS: 'sum', 'feriados': 'max', 'dia_despues_feriado': 'max'}).reset_index()
-    df_hosting_processed = add_time_parts(df_hosting_agg) # Aplicar add_time_parts aquí
+    df_hosting_processed = add_time_parts(df_hosting_agg) # Aplicar add_time_parts aquí (CONTIENE es_dia_de_pago ahora)
 
-    # --- AJUSTE v18.1: Preparar datos históricos para contexto LSTM ---
-    # Necesitamos aplicar el mismo preprocesamiento (dummies, scaling) que en el entrenamiento
+    # --- Preparar contexto histórico LSTM Planner ---
     hist_features_planner = ['sin_hour', 'cos_hour', 'sin_dow', 'cos_dow', 'feriados', 'dia_despues_feriado',
                              'es_dia_de_pago', 'month', 'semana_del_mes', 'es_domingo', 'es_madrugada',
                              'es_navidad', 'es_ano_nuevo', 'es_fiestas_patrias', TARGET_CALLS]
     X_hist_df = pd.get_dummies(df_hosting_processed[hist_features_planner], columns=['month', 'semana_del_mes'])
-    # Asegurar que tiene las mismas columnas que se usaron para entrenar
     X_hist_df = X_hist_df.reindex(columns=cols_planner, fill_value=0)
-    # Escalar los datos históricos
     X_hist_scaled = scaler_planner.transform(X_hist_df)
-    # Tomar los últimos N_STEPS-1 para el contexto inicial
-    # Ajuste: Necesitamos N_STEPS, no N_STEPS-1 para empezar la primera secuencia futura
-    if len(X_hist_scaled) < N_STEPS:
-         raise ValueError(f"No hay suficientes datos históricos ({len(X_hist_scaled)}) para el contexto LSTM (se necesitan {N_STEPS})")
+    if len(X_hist_scaled) < N_STEPS: raise ValueError(f"No hay suficientes datos históricos ({len(X_hist_scaled)}) para contexto LSTM ({N_STEPS})")
     historical_context_planner = X_hist_scaled[-N_STEPS:]
-    # --- Fin del Ajuste ---
+    # --- Fin ---
 
     df_tmo_hist = read_data(TMO_FILE); df_tmo_hist = ensure_ts_and_tz(df_tmo_hist); df_tmo_hist.columns = [c.lower().strip().replace(' ', '_') for c in df_tmo_hist.columns]; df_tmo_hist = df_tmo_hist.rename(columns={'tmo_general': TARGET_TMO})
     if TARGET_TMO not in df_tmo_hist.columns and all(c in df_tmo_hist.columns for c in ['tmo_comercial', 'q_comercial', 'tmo_tecnico', 'q_tecnico', 'q_general']): df_tmo_hist[TARGET_TMO] = (df_tmo_hist['tmo_comercial'] * df_tmo_hist['q_comercial'] + df_tmo_hist['tmo_tecnico'] * df_tmo_hist['q_tecnico']) / (df_tmo_hist['q_general'] + 1e-6)
     if 'q_llamadas_comercial' in df_tmo_hist.columns and 'q_llamadas_general' in df_tmo_hist.columns: df_tmo_hist['proporcion_comercial'] = df_tmo_hist['q_llamadas_comercial'] / (df_tmo_hist['q_llamadas_general'] + 1e-6); df_tmo_hist['proporcion_tecnica'] = df_tmo_hist['q_llamadas_tecnico'] / (df_tmo_hist['q_llamadas_general'] + 1e-6)
     else: print("  [Adv] No cols q_llamadas TMO."); df_tmo_hist['proporcion_comercial'] = 0; df_tmo_hist['proporcion_tecnica'] = 0
 
-    last_hist_ts = df_hosting_processed['ts'].max() # Usar df_hosting_processed
-    print(f"  [OK] Datos históricos cargados. Último timestamp: {last_hist_ts}")
+    last_hist_ts = df_hosting_processed['ts'].max(); print(f"  [OK] Datos históricos cargados. Último timestamp: {last_hist_ts}")
 
     # --- 3. Generar Esqueleto Futuro ---
     print("\n--- Fase 3: Generando Esqueleto de Fechas Futuras ---")
     start_future = last_hist_ts + pd.Timedelta(hours=1); end_future = start_future + pd.Timedelta(days=horizonte_dias, hours=23)
-    df_future = pd.DataFrame(pd.date_range(start=start_future, end=end_future, freq='h', tz=TZ), columns=['ts'])
-    df_future = df_future.iloc[:horizonte_dias * 24]
-    df_future = add_time_parts(df_future)
+    df_future = pd.DataFrame(pd.date_range(start=start_future, end=end_future, freq='h', tz=TZ), columns=['ts']); df_future = df_future.iloc[:horizonte_dias * 24]
+    df_future = add_time_parts(df_future) # add_time_parts ahora incluye es_dia_de_pago
     df_future['feriados'] = df_future['ts'].dt.date.isin(feriados_list).astype(int)
-    temp_ts_series = pd.concat([df_hosting_processed['ts'].iloc[-N_STEPS:], df_future['ts']]) # Aumentar contexto histórico
+    temp_ts_series = pd.concat([df_hosting_processed['ts'].iloc[-N_STEPS:], df_future['ts']])
     temp_feriados_series = pd.concat([df_hosting_processed['feriados'].iloc[-N_STEPS:], df_future['feriados']])
     all_feriados_df = pd.DataFrame({'ts': temp_ts_series, 'feriados': temp_feriados_series}).drop_duplicates(subset=['ts']).set_index('ts')
     future_feriados_shifted = all_feriados_df['feriados'].shift(24).loc[df_future['ts']]
@@ -317,7 +267,7 @@ def main(horizonte_dias):
     df_future = pd.merge(df_future, df_agg_anomalies, on='ts', how='left')
     numeric_cols_future = df_future.select_dtypes(include=np.number).columns
     df_future[numeric_cols_future] = df_future[numeric_cols_future].fillna(df_future[numeric_cols_future].mean()); df_future = df_future.fillna(0)
-    if cols_risk and all(c in df_future.columns for c in cols_risk): # Comprobar si cols_risk no está vacío
+    if cols_risk and all(c in df_future.columns for c in cols_risk):
         X_risk = df_future.reindex(columns=cols_risk, fill_value=0); X_risk_s = scaler_risk.transform(X_risk)
         df_future['risk_proba'] = model_risk.predict(X_risk_s); print("  [OK] Predicciones riesgo generadas.")
     else: print("  [Adv] Faltan columnas/config risk. 'risk_proba'=0."); df_future['risk_proba'] = 0.0
@@ -325,97 +275,61 @@ def main(horizonte_dias):
 
     # --- 5. Pipeline Llamadas (Planificador LSTM) ---
     print("\n--- Fase 5: Pipeline de Llamadas (Planificador LSTM) ---")
-    # --- AJUSTE v18.1: Preparar features futuras y crear secuencias ---
-    # 1. Crear DataFrame de features futuras (sin lags/MAs, pero necesita placeholder para TARGET_CALLS)
     df_future_features_planner = df_future.copy()
-    df_future_features_planner[TARGET_CALLS] = 0 # Placeholder, LSTM lo ignora en la entrada pero necesita la columna
-    X_future_df = pd.get_dummies(df_future_features_planner[hist_features_planner], columns=['month', 'semana_del_mes']) # Usar misma lista
-    X_future_df = X_future_df.reindex(columns=cols_planner, fill_value=0) # Alinear columnas
-
-    # 2. Escalar features futuras
+    df_future_features_planner[TARGET_CALLS] = 0 # Placeholder
+    # Usar hist_features_planner que SÍ incluye es_dia_de_pago
+    X_future_df = pd.get_dummies(df_future_features_planner[hist_features_planner], columns=['month', 'semana_del_mes'])
+    X_future_df = X_future_df.reindex(columns=cols_planner, fill_value=0)
     X_future_scaled = scaler_planner.transform(X_future_df)
-
-    # 3. Crear secuencias 3D para la inferencia
     print(f"Creando secuencias de inferencia para Planificador (usando {N_STEPS} pasos históricos)...")
     X_planner_seq = create_inference_sequences(historical_context_planner, X_future_scaled, time_steps=N_STEPS)
-
-    # 4. Predecir
     if X_planner_seq.shape[0] > 0:
         print(f"Prediciendo con LSTM Planner (Input shape: {X_planner_seq.shape})...")
         predictions_planner = model_planner.predict(X_planner_seq).flatten()
-        # Asegurar que las predicciones tengan la misma longitud que df_future
-        if len(predictions_planner) == len(df_future):
-            df_future['llamadas_hora'] = predictions_planner.clip(0).astype(int)
-            print("  [OK] Predicciones de llamadas (Planificador LSTM) generadas.")
-        else:
-             print(f"  [ERROR] Discrepancia en longitud de predicción ({len(predictions_planner)}) vs futuro ({len(df_future)}). Usando 0.")
-             df_future['llamadas_hora'] = 0
-    else:
-        print("  [ERROR] No se pudieron crear secuencias para la inferencia del Planificador. Usando 0.")
-        df_future['llamadas_hora'] = 0
-    # --- Fin del Ajuste ---
-
+        if len(predictions_planner) == len(df_future): df_future['llamadas_hora'] = predictions_planner.clip(0).astype(int); print("  [OK] Predicciones llamadas (LSTM) generadas.")
+        else: print(f"  [ERROR] Discrepancia longitud predicción ({len(predictions_planner)}) vs futuro ({len(df_future)}). Usando 0."); df_future['llamadas_hora'] = 0
+    else: print("  [ERROR] No se pudieron crear secuencias inferencia Planificador. Usando 0."); df_future['llamadas_hora'] = 0
 
     # --- 6. Pipeline de TMO (Analista de Operaciones LSTM) ---
     print("\n--- Fase 6: Pipeline de TMO (Analista de Operaciones LSTM) ---")
-    # --- AJUSTE v18.1: Preparar contexto histórico, features futuras y secuencias TMO ---
     if df_tmo_hist.empty: print("  [Adv] TMO_HISTORICO vacío. Usando TMO=0."); last_tmo_data = pd.Series(dtype='float64')
     else: last_tmo_data = df_tmo_hist.sort_values('ts').iloc[-1]
     seed_cols = ['proporcion_comercial', 'proporcion_tecnica', 'tmo_comercial', 'tmo_tecnico']
     df_tmo_features_future = df_future.copy()
-    df_tmo_features_future[TARGET_CALLS] = df_tmo_features_future['llamadas_hora'] # Usar llamadas predichas por Planner LSTM
-    for col in seed_cols: df_tmo_features_future[col] = last_tmo_data.get(col, 0) # Usar .get con default
+    df_tmo_features_future[TARGET_CALLS] = df_tmo_features_future['llamadas_hora']
+    for col in seed_cols: df_tmo_features_future[col] = last_tmo_data.get(col, 0)
     df_tmo_features_future[TARGET_TMO] = 0 # Placeholder
-
-    # Crear DataFrame histórico para TMO
-    # Necesitamos unir hosting_agg y tmo_hist para tener todas las features
+    # Crear histórico TMO
     df_hist_tmo_merged = pd.merge(df_hosting_processed, df_tmo_hist, on='ts', how='inner')
-    # Añadir features que podrían faltar si df_anomaly_features está vacío en entreno
-    if not df_tmo_hist.empty: # Solo si hay datos de TMO
+    # Añadir features v15/v18 a histórico TMO
+    if not df_tmo_hist.empty:
          hist_features_tmo = ['proporcion_comercial', 'proporcion_tecnica', 'tmo_comercial', 'tmo_tecnico', TARGET_CALLS,
                            'sin_hour', 'cos_hour', 'sin_dow', 'cos_dow', 'feriados', 'dia_despues_feriado',
                            'es_dia_de_pago', 'month', 'semana_del_mes', 'es_domingo', 'es_madrugada',
                            'es_navidad', 'es_ano_nuevo', 'es_fiestas_patrias', TARGET_TMO]
-         # Añadir features de anomalías si existen en cols_tmo
-         anomaly_cols_in_tmo = [c for c in cols_tmo if 'anomalia_' in c or 'pct_comunas' in c]
-         hist_features_tmo.extend(anomaly_cols_in_tmo)
+         anomaly_cols_in_tmo = [c for c in cols_tmo if 'anomalia_' in c or 'pct_comunas' in c]; hist_features_tmo.extend(anomaly_cols_in_tmo)
          if 'precipitacion_x_dia_habil' in cols_tmo: hist_features_tmo.append('precipitacion_x_dia_habil')
-         # Asegurar que todas las features existan en el histórico mergeado
          for f in hist_features_tmo:
               if f not in df_hist_tmo_merged.columns: df_hist_tmo_merged[f] = 0 # Añadir con 0 si falta
          X_hist_tmo_df = pd.get_dummies(df_hist_tmo_merged[hist_features_tmo], columns=['month', 'semana_del_mes'])
          X_hist_tmo_df = X_hist_tmo_df.reindex(columns=cols_tmo, fill_value=0)
          X_hist_tmo_scaled = scaler_tmo.transform(X_hist_tmo_df)
-         if len(X_hist_tmo_scaled) < N_STEPS: print(f"  [Adv] No hay suficiente histórico TMO ({len(X_hist_tmo_scaled)}) para contexto LSTM ({N_STEPS}). TMO será 0.") ; historical_context_tmo = np.zeros((N_STEPS, len(cols_tmo))) # Contexto dummy
+         if len(X_hist_tmo_scaled) < N_STEPS: print(f"  [Adv] No hay suficiente histórico TMO ({len(X_hist_tmo_scaled)}) para contexto LSTM ({N_STEPS})."); historical_context_tmo = np.zeros((N_STEPS, len(cols_tmo)))
          else: historical_context_tmo = X_hist_tmo_scaled[-N_STEPS:]
-    else: # Si df_tmo_hist está vacío
-         print("  [Adv] Histórico TMO vacío. Usando contexto dummy.")
-         historical_context_tmo = np.zeros((N_STEPS, len(cols_tmo))) # Contexto dummy si no hay histórico
-
+    else: print("  [Adv] Histórico TMO vacío."); historical_context_tmo = np.zeros((N_STEPS, len(cols_tmo)))
     # Preparar features futuras TMO
+    # Usar hist_features_tmo que SÍ incluye es_dia_de_pago
     X_future_tmo_df = pd.get_dummies(df_tmo_features_future[hist_features_tmo], columns=['month', 'semana_del_mes'])
     X_future_tmo_df = X_future_tmo_df.reindex(columns=cols_tmo, fill_value=0)
     X_future_tmo_scaled = scaler_tmo.transform(X_future_tmo_df)
-
-    # Crear secuencias TMO
     print(f"Creando secuencias de inferencia para TMO (usando {N_STEPS} pasos históricos)...")
     X_tmo_seq = create_inference_sequences(historical_context_tmo, X_future_tmo_scaled, time_steps=N_STEPS)
-
-    # Predecir TMO
     if X_tmo_seq.shape[0] > 0:
         print(f"Prediciendo con LSTM TMO (Input shape: {X_tmo_seq.shape})...")
         predictions_tmo = model_tmo.predict(X_tmo_seq).flatten()
-        if len(predictions_tmo) == len(df_future):
-             df_future['tmo_hora'] = predictions_tmo.clip(0)
-             print("  [OK] Predicciones de TMO (LSTM) generadas.")
-        else:
-             print(f"  [ERROR] Discrepancia longitud predicción TMO ({len(predictions_tmo)}) vs futuro ({len(df_future)}). Usando 0.")
-             df_future['tmo_hora'] = 0.0
-    else:
-        print("  [ERROR] No se pudieron crear secuencias para la inferencia TMO. Usando 0.")
-        df_future['tmo_hora'] = 0.0
-    # --- Fin del Ajuste ---
-
+        if len(predictions_tmo) == len(df_future): df_future['tmo_hora'] = predictions_tmo.clip(0); print("  [OK] Predicciones TMO (LSTM) generadas.")
+        else: print(f"  [ERROR] Discrepancia longitud predicción TMO ({len(predictions_tmo)}) vs futuro ({len(df_future)}). Usando 0."); df_future['tmo_hora'] = 0.0
+    else: print("  [ERROR] No se pudieron crear secuencias inferencia TMO. Usando 0."); df_future['tmo_hora'] = 0.0
 
     # --- 7. Generar Salidas Finales (JSONs) ---
     print("\n--- Fase 7: Generando Archivos JSON de Salida ---")
