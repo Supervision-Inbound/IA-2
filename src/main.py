@@ -1,4 +1,4 @@
-# (Imports y configuración global - ajustados para v24.2)
+# (Imports y configuración global - ajustados para v24.3)
 import os
 import argparse
 import json
@@ -13,7 +13,7 @@ import tensorflow.keras.backend as K
 TZ = 'America/Santiago'; os.environ['TZ'] = TZ
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)); ROOT_DIR = os.path.dirname(BASE_DIR)
 DATA_DIR = os.path.join(ROOT_DIR, "data"); MODEL_DIR = os.path.join(ROOT_DIR, "models"); PUBLIC_DIR = os.path.join(ROOT_DIR, "public")
-# Archivos v24.2
+# Archivos v24.x (Base q=0.5)
 PLANNER_MODEL_FILE = os.path.join(MODEL_DIR, "modelo_planner.keras"); PLANNER_SCALER_FILE = os.path.join(MODEL_DIR, "scaler_planner.pkl"); PLANNER_COLS_FILE = os.path.join(MODEL_DIR, "training_columns_planner.json")
 PLANNER_BASELINES_FILE = os.path.join(MODEL_DIR, "baselines_llamadas.pkl") # Se carga pero no se usa en esta versión
 RISK_MODEL_FILE = os.path.join(MODEL_DIR, "modelo_riesgos.keras"); RISK_SCALER_FILE = os.path.join(MODEL_DIR, "scaler_riesgos.pkl"); RISK_COLS_FILE = os.path.join(MODEL_DIR, "training_columns_riesgos.json"); RISK_BASELINES_FILE = os.path.join(MODEL_DIR, "baselines_clima.pkl")
@@ -89,7 +89,7 @@ def create_inference_sequences(historical_scaled_context, future_scaled_data, ti
     if not Xs: return np.empty((0, time_steps, n_features))
     return np.array(Xs)
 
-# --- Función aplicar_capping_mad (NO SE USA en v24.2) ---
+# --- Función aplicar_capping_mad (NO SE USA en v24.2/v24.3) ---
 # def aplicar_capping_mad(df_predicciones, df_baselines, k_weekday=K_MAD_WEEKDAY, k_weekend=K_MAD_WEEKEND):
 #    ... (código anterior) ...
 
@@ -162,26 +162,31 @@ def generate_alerts_json(df_per_comuna, df_risk_proba, proba_threshold=0.5, impa
 # --- FUNCIÓN PRINCIPAL ORQUESTADORA ---
 
 def main(horizonte_dias):
-    print("="*60); print(f"INICIANDO PIPELINE DE INFERENCIA (v_main 24.2 - LSTM Base SIN Capping)"); print(f"Zona Horaria: {TZ} | Horizonte: {horizonte_dias} días"); print("="*60) # v24.2
+    print("="*60); print(f"INICIANDO PIPELINE DE INFERENCIA (v_main 24.3 - SIN Capping)"); print(f"Zona Horaria: {TZ} | Horizonte: {horizonte_dias} días"); print("="*60) # v24.3
 
-    # --- 1. Cargar Modelos y Artefactos (v24.2) ---
-    print("\n--- Fase 1: Cargando Modelos y Artefactos (v24.2 - Base q=0.50) ---")
+    # --- 1. Cargar Modelos y Artefactos (v24.3) ---
+    print("\n--- Fase 1: Cargando Modelos y Artefactos (v24.3 - Base q=0.50) ---")
     try:
         custom_objects_dict = {'loss': quantile_loss(q=QUANTILE_P)} # QUANTILE_P = 0.50
         model_planner = tf.keras.models.load_model(PLANNER_MODEL_FILE, custom_objects=custom_objects_dict); scaler_planner = joblib.load(PLANNER_SCALER_FILE)
         with open(PLANNER_COLS_FILE, 'r') as f: cols_planner = json.load(f)
-        # Baselines se cargan pero no se usan
-        try: baselines_llamadas = joblib.load(PLANNER_BASELINES_FILE)
-        except FileNotFoundError: print(f"  [Adv] {PLANNER_BASELINES_FILE} no encontrado (No se usará)."); baselines_llamadas = pd.DataFrame() # No crítico aquí
+        try: baselines_llamadas = joblib.load(PLANNER_BASELINES_FILE) # Carga pero no usa
+        except FileNotFoundError: print(f"  [Adv] {PLANNER_BASELINES_FILE} no encontrado (No se usará)."); baselines_llamadas = pd.DataFrame()
         model_risk = tf.keras.models.load_model(RISK_MODEL_FILE); scaler_risk = joblib.load(RISK_SCALER_FILE)
-        try: with open(RISK_COLS_FILE, 'r') as f: cols_risk = json.load(f)
-        except FileNotFoundError: print(f"  [Adv] {RISK_COLS_FILE} no encontrado."); cols_risk = []
+
+        # --- AJUSTE v24.3: Corrección indentación ---
+        try:
+            with open(RISK_COLS_FILE, 'r') as f: cols_risk = json.load(f)
+        except FileNotFoundError: # <-- Indentación Correcta
+            print(f"  [Adv] {RISK_COLS_FILE} no encontrado."); cols_risk = []
+        # --- Fin Ajuste ---
+
         try: baselines_clima = joblib.load(RISK_BASELINES_FILE)
         except FileNotFoundError: print(f"  [Adv] {RISK_BASELINES_FILE} no encontrado."); baselines_clima = pd.DataFrame()
         model_tmo = tf.keras.models.load_model(TMO_MODEL_FILE, custom_objects=custom_objects_dict); scaler_tmo = joblib.load(TMO_SCALER_FILE)
         with open(TMO_COLS_FILE, 'r') as f: cols_tmo = json.load(f)
-        print("  [OK] Todos los modelos v24.2 cargados.")
-    except Exception as e: print(f"  [ERROR] Falla crítica al cargar artefactos: {e}"); print("  Asegúrate que archivos v24.2 existan en 'models/'."); return
+        print("  [OK] Todos los modelos v24.3 cargados.")
+    except Exception as e: print(f"  [ERROR] Falla crítica al cargar artefactos: {e}"); print("  Asegúrate que archivos v24.x existan en 'models/'."); return
 
     # --- 2. Cargar Datos Históricos ---
     print("\n--- Fase 2: Cargando Datos Históricos ---")
@@ -213,7 +218,7 @@ def main(horizonte_dias):
 
     # --- 3. Generar Esqueleto Futuro ---
     print("\n--- Fase 3: Generando Esqueleto de Fechas Futuras ---")
-    # (Código sin cambios v21.1)
+    # (Código sin cambios)
     start_future = last_hist_ts + pd.Timedelta(hours=1); end_future = start_future + pd.Timedelta(days=horizonte_dias, hours=23)
     df_future = pd.DataFrame(pd.date_range(start=start_future, end=end_future, freq='h', tz=TZ), columns=['ts']); df_future = df_future.iloc[:horizonte_dias * 24]
     df_future = add_time_parts(df_future)
@@ -252,15 +257,14 @@ def main(horizonte_dias):
     if X_planner_seq.shape[0] > 0:
         print(f"Prediciendo con LSTM Planner ({X_planner_seq.shape})..."); predictions_planner = model_planner.predict(X_planner_seq).flatten()
         if len(predictions_planner) == len(df_future):
-             df_future['llamadas_hora'] = predictions_planner.clip(0).astype(int) # <-- Convertir a INT aquí
+             df_future['llamadas_hora'] = predictions_planner.clip(0).astype(int) # <-- Convertir a INT aquí directamente
         else: print(f"  [ERROR] Discrepancia longitud predicción ({len(predictions_planner)}) vs futuro ({len(df_future)})."); df_future['llamadas_hora'] = 0
     else: print("  [ERROR] No se crearon secuencias inferencia Planificador."); df_future['llamadas_hora'] = 0
     print("  [OK] Predicciones BASE llamadas (LSTM q=0.50) generadas.")
 
-    # --- AJUSTE v24.2: Capping MAD COMENTADO ---
+    # --- Capping MAD COMENTADO ---
     # print("\n--- Aplicando Capping MAD (Omitido en v24.2) ---")
     # df_future = aplicar_capping_mad(df_future, baselines_llamadas, k_weekday=K_MAD_WEEKDAY, k_weekend=K_MAD_WEEKEND)
-    # --- Fin Ajuste ---
 
     # --- 6. Pipeline TMO (LSTM Base) ---
     print("\n--- Fase 6: Pipeline de TMO (Analista de Operaciones LSTM Base) ---")
@@ -268,10 +272,9 @@ def main(horizonte_dias):
     if df_tmo_hist.empty: print("  [Adv] TMO_HISTORICO vacío."); last_tmo_data = pd.Series(dtype='float64')
     else: last_tmo_data = df_tmo_hist.sort_values('ts').iloc[-1]
     seed_cols = ['proporcion_comercial', 'proporcion_tecnica', 'tmo_comercial', 'tmo_tecnico']
-    df_tmo_features_future = df_future.copy(); df_tmo_features_future[TARGET_CALLS] = df_tmo_features_future['llamadas_hora'] # <-- USA LLAMADAS BASE (SIN CAPPING)
+    df_tmo_features_future = df_future.copy(); df_tmo_features_future[TARGET_CALLS] = df_tmo_features_future['llamadas_hora'] # <-- USA LLAMADAS BASE
     for col in seed_cols: df_tmo_features_future[col] = last_tmo_data.get(col, 0)
     df_tmo_features_future[TARGET_TMO] = 0 # Placeholder
-    # Histórico TMO
     df_hist_tmo_merged = pd.merge(df_hosting_processed, df_tmo_hist, on='ts', how='inner')
     if not df_tmo_hist.empty:
          hist_features_tmo = ['proporcion_comercial', 'proporcion_tecnica', 'tmo_comercial', 'tmo_tecnico', TARGET_CALLS, 'sin_hour', 'cos_hour', 'sin_dow', 'cos_dow', 'feriados', 'dia_despues_feriado', 'dia_antes_feriado', 'es_quincena', 'es_dia_de_pago', 'month', 'semana_del_mes', 'es_domingo', 'es_madrugada', 'es_navidad', 'es_ano_nuevo', 'es_fiestas_patrias', TARGET_TMO]
@@ -284,7 +287,6 @@ def main(horizonte_dias):
          if len(X_hist_tmo_scaled) < N_STEPS: print(f"  [Adv] No hist TMO ({len(X_hist_tmo_scaled)}) para contexto ({N_STEPS})."); historical_context_tmo = np.zeros((N_STEPS, len(cols_tmo)))
          else: historical_context_tmo = X_hist_tmo_scaled[-N_STEPS:]
     else: print("  [Adv] Histórico TMO vacío."); historical_context_tmo = np.zeros((N_STEPS, len(cols_tmo)))
-    # Futuro TMO
     X_future_tmo_df = pd.get_dummies(df_tmo_features_future[hist_features_tmo], columns=['month', 'semana_del_mes'])
     X_future_tmo_df = X_future_tmo_df.reindex(columns=cols_tmo, fill_value=0); X_future_tmo_scaled = scaler_tmo.transform(X_future_tmo_df)
     print(f"Creando secuencias inferencia TMO ({N_STEPS} hist)...")
