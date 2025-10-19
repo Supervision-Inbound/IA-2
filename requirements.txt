@@ -1,0 +1,6 @@
+tensorflow
+scikit-learn
+joblib
+pandas
+numpy
+openpyxl
