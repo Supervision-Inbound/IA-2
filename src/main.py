@@ -32,15 +32,11 @@ TMO_MODEL_FILE = os.path.join(MODEL_DIR, "modelo_tmo.keras")
 TMO_SCALER_FILE = os.path.join(MODEL_DIR, "scaler_tmo.pkl")
 TMO_COLS_FILE = os.path.join(MODEL_DIR, "training_columns_tmo.json")
 
-# Nombres de archivos de datos
-# --- CORRECCIÓN 1 ---
-# Apunta al archivo que sí existe en tu repo
+# Nombres de archivos de datos (Ajustados a tu repo)
 HOSTING_FILE = os.path.join(DATA_DIR, "historical_data.csv")
 TMO_FILE = os.path.join(DATA_DIR, "TMO_HISTORICO.csv")
 FERIADOS_FILE = os.path.join(DATA_DIR, "Feriados_Chilev2.csv")
-# --- CORRECCIÓN 2 ---
-# Usa el mismo archivo para simular el clima, ya que 'historico_clima.csv' no está
-CLIMA_HIST_FILE = os.path.join(DATA_DIR, "historical_data.csv")
+CLIMA_HIST_FILE = os.path.join(DATA_DIR, "historical_data.csv") # Se usa para simular clima
 
 TARGET_CALLS = "recibidos_nacional"
 TARGET_TMO = "tmo_general"
@@ -60,10 +56,12 @@ def read_data(path, hoja=None):
     if path_lower.endswith(".csv"):
         try:
             df = pd.read_csv(path, low_memory=False)
+            # Detección de delimitador ;
             if df.shape[1] == 1 and df.iloc[0,0] is not None and ';' in str(df.iloc[0,0]):
                 df = pd.read_csv(path, delimiter=';', low_memory=False)
             return df
         except Exception:
+            # Fallback a ;
             return pd.read_csv(path, delimiter=';', low_memory=False)
     elif path_lower.endswith((".xlsx", ".xls")):
         return pd.read_excel(path, sheet_name=hoja if hoja is not None else 0)
@@ -126,11 +124,12 @@ def normalize_climate_columns(df: pd.DataFrame) -> pd.DataFrame:
         'lluvia': ['rain', 'lluvia', 'rainfall']
     }
     df_renamed = df.copy()
-    df.columns = [c.lower().strip().replace(' ', '_') for c in df.columns]
+    # Asegurar que todas las columnas estén en minúsculas para el mapeo
+    df_renamed.columns = [c.lower().strip().replace(' ', '_') for c in df_renamed.columns]
     
     for standard_name, possible_names in column_map.items():
         for name in possible_names:
-            if name in df.columns:
+            if name in df_renamed.columns:
                 df_renamed.rename(columns={name: standard_name}, inplace=True)
                 break
     return df_renamed
@@ -183,8 +182,21 @@ def fetch_future_weather(start_date, end_date):
         return df_simulado.reset_index()
 
     df_hist = ensure_ts_and_tz(df_hist)
-    df_hist = normalize_climate_columns(df_hist)
+    df_hist = normalize_climate_columns(df_hist) # Normaliza nombres como 'temperatura'
     
+    # Revisar si las columnas de clima existen después de normalizar
+    climate_cols_found = [col for col in ['temperatura', 'precipitacion', 'lluvia'] if col in df_hist.columns]
+    
+    if not climate_cols_found:
+        print(f"    [Clima] ADVERTENCIA: No se encontraron columnas de clima en {CLIMA_HIST_FILE}. Generando datos dummy.")
+        comunas = ['Santiago', 'Puente Alto', 'Maipu']
+        dates = pd.date_range(start=start_date, end=end_date, freq='h', tz=TZ)
+        df_simulado = pd.DataFrame(index=pd.MultiIndex.from_product([comunas, dates], names=['comuna', 'ts']))
+        df_simulado['temperatura'] = np.random.uniform(10, 25, size=len(df_simulado))
+        df_simulado['precipitacion'] = np.random.uniform(0, 1, size=len(df_simulado))
+        df_simulado['lluvia'] = np.random.uniform(0, 1, size=len(df_simulado))
+        return df_simulado.reset_index()
+
     if 'comuna' not in df_hist.columns:
         print("    [Clima] ADVERTENCIA: 'comuna' no encontrada en archivo de clima. Usando 'Santiago' como dummy.")
         df_hist['comuna'] = 'Santiago'
@@ -253,8 +265,7 @@ def process_future_climate(df_future_weather, df_baselines):
     """
     print("    [Clima] Procesando datos futuros y calculando anomalías...")
     df = normalize_climate_columns(df_future_weather.copy())
-    df.columns = [c.lower().strip().replace(' ', '_') for c in df.columns]
-
+    
     if 'ts' not in df.columns or df['ts'].isnull().all():
         df['ts'] = pd.to_datetime(df['ts'], errors='coerce')
     
@@ -310,17 +321,21 @@ def process_future_climate(df_future_weather, df_baselines):
     for col in anomaly_cols:
         agg_functions[col] = ['max', 'sum', lambda x: (x > 2.5).sum() / n_comunas if n_comunas > 0 else 0]
 
-    df_agregado = df_merged.groupby('ts').agg(agg_functions).reset_index()
-    
-    # Renombrar columnas agregadas
-    new_cols = ['ts']
-    for col in df_agregado.columns[1:]:
-        if col[1] == '<lambda_0>':
-            new_cols.append(f"{col[0]}_pct_comunas_afectadas")
-        else:
-            new_cols.append(f"{col[0]}_{col[1]}")
-    df_agregado.columns = new_cols
-    
+    if not agg_functions:
+        print("    [Clima] ADVERTENCIA: No se generaron funciones de agregación de anomalías.")
+        # Crear un dataframe vacío con 'ts' para evitar que el merge falle
+        df_agregado = pd.DataFrame(columns=['ts'])
+    else:
+        df_agregado = df_merged.groupby('ts').agg(agg_functions).reset_index()
+        # Renombrar columnas agregadas
+        new_cols = ['ts']
+        for col in df_agregado.columns[1:]:
+            if col[1] == '<lambda_0>':
+                new_cols.append(f"{col[0]}_pct_comunas_afectadas")
+            else:
+                new_cols.append(f"{col[0]}_{col[1]}")
+        df_agregado.columns = new_cols
+
     print("    [Clima] Cálculo de anomalías completado.")
     return df_agregado, df_per_comuna_anomalies
 
@@ -419,13 +434,26 @@ def main(horizonte_dias):
     df_hosting = read_data(HOSTING_FILE)
     df_hosting = ensure_ts_and_tz(df_hosting)
     df_hosting = df_hosting.rename(columns={'recibidos': TARGET_CALLS})
+    
+    # Cargar Feriados (para unirlos antes de agrupar)
+    df_feriados = read_data(FERIADOS_FILE)
+    
+    # --- INICIO DE LA CORRECCIÓN ---
+    # La columna en el CSV es 'Fecha' (Mayúscula)
+    # Convertimos 'Fecha' a datetime y luego a formato .date
+    try:
+        df_feriados['fecha_dt'] = pd.to_datetime(df_feriados['Fecha'], format='%d-%m-%Y').dt.date
+    except Exception as e:
+        print(f"  [Adv] Falló al parsear 'Fecha' con formato dd-mm-yyyy ({e}). Reintentando formato auto.")
+        df_feriados['fecha_dt'] = pd.to_datetime(df_feriados['Fecha']).dt.date
+    # --- FIN DE LA CORRECCIÓN ---
+    
+    feriados_list = set(df_feriados['fecha_dt'])
+
     # Asegurar que la columna 'feriados' exista
     if 'feriados' not in df_hosting.columns:
         print("  [Adv] 'feriados' no está en historical_data.csv. Se creará desde Feriados_Chilev2.csv.")
-        df_feriados_lookup = read_data(FERIADOS_FILE)
-        df_feriados_lookup['fecha'] = pd.to_datetime(df_feriados_lookup['fecha']).dt.date
-        feriados_list_lookup = set(df_feriados_lookup['fecha'])
-        df_hosting['feriados'] = df_hosting['ts'].dt.date.isin(feriados_list_lookup).astype(int)
+        df_hosting['feriados'] = df_hosting['ts'].dt.date.isin(feriados_list).astype(int)
     
     df_hosting = df_hosting.groupby("ts").agg({TARGET_CALLS: 'sum', 'feriados': 'max'}).reset_index()
     df_hosting = add_time_parts(df_hosting)
@@ -433,7 +461,6 @@ def main(horizonte_dias):
     # Cargar Histórico de TMO
     df_tmo_hist = read_data(TMO_FILE)
     df_tmo_hist = ensure_ts_and_tz(df_tmo_hist)
-    df_tmo_hist = df_tmo_hist.rename(columns={'tmo_general': TARGET_TMO})
     
     # Calcular TMO general si no existe
     if TARGET_TMO not in df_tmo_hist.columns and all(c in df_tmo_hist.columns for c in ['tmo_comercial', 'q_comercial', 'tmo_tecnico', 'q_tecnico', 'q_general']):
@@ -447,11 +474,6 @@ def main(horizonte_dias):
         print("  [Adv] Columnas de 'q_llamadas' no encontradas en TMO. Proporciones serán 0.")
         df_tmo_hist['proporcion_comercial'] = 0
         df_tmo_hist['proporcion_tecnica'] = 0
-
-    # Cargar Feriados
-    df_feriados = read_data(FERIADOS_FILE)
-    df_feriados['fecha'] = pd.to_datetime(df_feriados['fecha']).dt.date
-    feriados_list = set(df_feriados['fecha'])
 
     last_hist_ts = df_hosting['ts'].max()
     print(f"  [OK] Datos históricos cargados. Último timestamp: {last_hist_ts}")
@@ -485,6 +507,7 @@ def main(horizonte_dias):
     # Rellenar cualquier NaN en clima (ej. fallo de API)
     numeric_cols_future = df_future.select_dtypes(include=np.number).columns
     df_future[numeric_cols_future] = df_future[numeric_cols_future].fillna(df_future[numeric_cols_future].mean())
+    df_future = df_future.fillna(0) # Relleno final por si acaso
 
     # 4.4. Predecir Riesgo
     X_risk = df_future.reindex(columns=cols_risk, fill_value=0)
@@ -520,6 +543,7 @@ def main(horizonte_dias):
     # Rellenar NaNs de lags/MAs iniciales
     numeric_cols_planner = X_planner.select_dtypes(include=np.number).columns
     X_planner[numeric_cols_planner] = X_planner[numeric_cols_planner].fillna(X_planner[numeric_cols_planner].mean())
+    X_planner = X_planner.fillna(0)
     
     X_planner_s = scaler_planner.transform(X_planner)
     
@@ -527,11 +551,16 @@ def main(horizonte_dias):
     df_future['llamadas_hora'] = model_planner.predict(X_planner_s).clip(0).astype(int)
     print("  [OK] Predicciones de llamadas (Planificador) generadas.")
     
-    # --- 6. Pipeline TMO (Analista de Operaciones) ---
+    # --- 6. Pipeline de TMO (Analista de Operaciones) ---
     print("\n--- Fase 6: Pipeline de TMO (Analista de Operaciones) ---")
     
     # Obtener "semillas" (seeds) del último dato de TMO histórico
-    last_tmo_data = df_tmo_hist.sort_values('ts').iloc[-1]
+    if df_tmo_hist.empty:
+        print("  [Adv] TMO_HISTORICO.csv está vacío o no cargó. Usando semillas TMO=0.")
+        last_tmo_data = pd.Series(dtype='float64')
+    else:
+        last_tmo_data = df_tmo_hist.sort_values('ts').iloc[-1]
+        
     seed_cols = [
         'proporcion_comercial', 'proporcion_tecnica', 
         'tmo_comercial', 'tmo_tecnico'
@@ -543,7 +572,7 @@ def main(horizonte_dias):
     
     # Aplicar semillas a todo el futuro
     for col in seed_cols:
-        if col in last_tmo_data:
+        if col in last_tmo_data and pd.notna(last_tmo_data[col]):
             df_tmo_features[col] = last_tmo_data[col]
         else:
             df_tmo_features[col] = 0 # Fallback
@@ -554,6 +583,7 @@ def main(horizonte_dias):
     
     numeric_cols_tmo = X_tmo.select_dtypes(include=np.number).columns
     X_tmo[numeric_cols_tmo] = X_tmo[numeric_cols_tmo].fillna(X_tmo[numeric_cols_tmo].mean())
+    X_tmo = X_tmo.fillna(0)
     
     X_tmo_s = scaler_tmo.transform(X_tmo)
     
