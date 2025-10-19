@@ -18,10 +18,10 @@ TMO_MODEL_FILE = os.path.join(MODEL_DIR, "modelo_tmo.keras"); TMO_SCALER_FILE = 
 HOSTING_FILE = os.path.join(DATA_DIR, "historical_data.csv"); TMO_FILE = os.path.join(DATA_DIR, "TMO_HISTORICO.csv"); FERIADOS_FILE = os.path.join(DATA_DIR, "Feriados_Chilev2.csv"); CLIMA_HIST_FILE = os.path.join(DATA_DIR, "historical_data.csv")
 TARGET_CALLS = "recibidos_nacional"; TARGET_TMO = "tmo_general"
 
-# --- AJUSTE v27.2: Renombrar variables para que coincidan con la función ---
-K_MAD_WEEKDAY = 5.0  # K base (lunes-viernes)
-K_MAD_WEEKEND = 6.5 # K fin de semana
-# --- Fin Ajuste ---
+# --- Parámetros de Post-Procesamiento (v27) ---
+K_MAD_WEEKDAY = 5.0
+K_MAD_WEEKEND = 6.5
+# --- Fin ---
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'; warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl'); warnings.filterwarnings('ignore', category=FutureWarning)
 pd.options.mode.chained_assignment = None # default='warn'
@@ -145,21 +145,18 @@ def baseline_from_history(df_hist, col):
     base['mediana'].fillna(d[col].median(), inplace=True); base['mad'] = np.maximum(base['mad'], 1e-6)
     return base.reset_index()
 
-# --- AJUSTE v27.2: La función ahora usa los nombres de variable correctos ---
 def apply_peak_smoothing_history(df_future, col, base, k_weekday=K_MAD_WEEKDAY, k_weekend=K_MAD_WEEKEND):
     df = df_future.copy()
     if base.empty: print("    [Advertencia] Baselines vacíos. Omitiendo capping MAD."); return df
     if 'dow' not in df.columns: df = add_time_parts(df)
     df_merged = pd.merge(df, base, on=['dow', 'hour'], how='left')
     df_merged['mediana'].fillna(base['mediana'].mean(), inplace=True); df_merged['mad'].fillna(base['mad'].mean(), inplace=True); df_merged['q95'].fillna(base['q95'].mean(), inplace=True)
-    # Usa k_weekday y k_weekend pasados como argumentos
-    K = np.where(df_merged["dow"].isin([5, 6]), k_weekend, k_weekday).astype(float) 
+    K = np.where(df_merged["dow"].isin([5, 6]), k_weekend, k_weekday).astype(float)
     upper_cap = df_merged["mediana"].values + K * df_merged["mad"].values
     mask = (df_merged[col].astype(float).values > upper_cap) & (df_merged[col].astype(float).values > df_merged["q95"].values)
     n_capped = mask.sum()
     if n_capped > 0: print(f"    - Recortando {n_capped} picos (Capping MAD)."); df_merged.loc[mask, col] = upper_cap[mask]
     return df_merged[df.columns]
-# --- Fin Ajuste ---
 
 def compute_holiday_factors(df_hist, holidays_set, col_calls=TARGET_CALLS, col_tmo=TARGET_TMO):
     print("  Calculando factores de ajuste por feriados...")
@@ -259,7 +256,7 @@ def generate_alerts_json(df_per_comuna, df_risk_proba, proba_threshold=0.5, impa
 # --- FUNCIÓN PRINCIPAL ORQUESTADORA ---
 
 def main(horizonte_dias):
-    print("="*60); print(f"INICIANDO PIPELINE DE INFERENCIA (v_main 27.2 - MLP Base + Post-Proceso)"); print(f"Zona Horaria: {TZ} | Horizonte: {horizonte_dias} días"); print("="*60) # v27.2
+    print("="*60); print(f"INICIANDO PIPELINE DE INFERENCIA (v_main 27.3 - MLP Base + Post-Proceso)"); print(f"Zona Horaria: {TZ} | Horizonte: {horizonte_dias} días"); print("="*60) # v27.3
 
     # --- 1. Cargar Modelos y Artefactos (v7) ---
     print("\n--- Fase 1: Cargando Modelos y Artefactos (v7) ---")
@@ -268,7 +265,7 @@ def main(horizonte_dias):
         with open(PLANNER_COLS_FILE, 'r') as f: cols_planner = json.load(f)
         model_risk = tf.keras.models.load_model(RISK_MODEL_FILE); scaler_risk = joblib.load(RISK_SCALER_FILE)
         
-        # --- AJUSTE v27.2: Corrección indentación ---
+        # --- AJUSTE v27.3: Corrección indentación ---
         try:
             with open(RISK_COLS_FILE, 'r') as f: cols_risk = json.load(f)
         except FileNotFoundError: # <-- Indentación Correcta
@@ -315,7 +312,7 @@ def main(horizonte_dias):
 
     # --- 4. Pipeline Clima ---
     print("\n--- Fase 4: Pipeline de Clima (Analista de Riesgos) ---")
-    df_weather_future_raw = fetch_future_weather(start_future, end_date)
+    df_weather_future_raw = fetch_future_weather(start_future, end_future) # <-- CORRECCIÓN v27.3
     df_agg_anomalies, df_per_comuna_anomalies = process_future_climate(df_weather_future_raw, baselines_clima if not baselines_clima.empty else pd.DataFrame())
     df_future = pd.merge(df_future, df_agg_anomalies, on='ts', how='left')
     numeric_cols_future = df_future.select_dtypes(include=np.number).columns
