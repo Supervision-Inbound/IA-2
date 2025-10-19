@@ -6,6 +6,7 @@ import joblib
 import pandas as pd
 import numpy as np
 import tensorflow as tf
+import tensorflow.keras.backend as K # <--- AJUSTE v9.1 (Importar Keras backend)
 
 # --- CONFIGURACIÓN GLOBAL ---
 TZ = 'America/Santiago'
@@ -41,9 +42,28 @@ CLIMA_HIST_FILE = os.path.join(DATA_DIR, "historical_data.csv") # Se usa para si
 TARGET_CALLS = "recibidos_nacional"
 TARGET_TMO = "tmo_general"
 
+# <--- AJUSTE v9.1 (Definir el cuantil) ---
+# Debe ser el MISMO valor usado en el script de entrenamiento (v9)
+QUANTILE_P = 0.85
+
 # Suprimir advertencias de TensorFlow (opcional)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
+
+
+# <--- AJUSTE v9.1 (Definir la función de pérdida) ---
+def quantile_loss(q):
+    """
+    Función de pérdida de cuantiles.
+    q: El cuantil a predecir (ej. 0.85 para el percentil 85).
+    """
+    def loss(y_true, y_pred):
+        # Error
+        e = y_true - y_pred
+        # K.maximum(q * e, (q - 1) * e) es la fórmula de pérdida
+        return K.mean(K.maximum(q * e, (q - 1) * e), axis=-1)
+    return loss
+# --- Fin del ajuste ---
 
 
 # --- FUNCIONES DE UTILIDAD ---
@@ -111,7 +131,11 @@ def add_time_parts(df):
     df_copy["month"] = df_copy["ts"].dt.month
     df_copy["hour"] = df_copy["ts"].dt.hour
     df_copy["day"] = df_copy["ts"].dt.day
-    df_copy["es_dia_de_pago"] = df_copy['day'].isin([1, 2, 15, 16, 29, 30, 31]).astype(int)
+    
+    # --- AJUSTE v9 ---
+    # Calcula la semana del mes (1, 2, 3, 4, o 5)
+    df_copy["semana_del_mes"] = (df_copy["day"] - 1) // 7 + 1
+    
     # Cíclicas
     df_copy["sin_hour"] = np.sin(2 * np.pi * df_copy["hour"] / 24)
     df_copy["cos_hour"] = np.cos(2 * np.pi * df_copy["hour"] / 24)
@@ -411,21 +435,34 @@ def main(horizonte_dias):
     # --- 1. Cargar Modelos y Artefactos ---
     print("\n--- Fase 1: Cargando Modelos y Artefactos ---")
     try:
-        model_planner = tf.keras.models.load_model(PLANNER_MODEL_FILE)
+        # <--- AJUSTE v9.1 (Pasar 'custom_objects' al cargar) ---
+        # Keras necesita que le pasemos la definición de la función de pérdida
+        custom_objects_dict = {'loss': quantile_loss(q=QUANTILE_P)}
+        
+        model_planner = tf.keras.models.load_model(
+            PLANNER_MODEL_FILE, 
+            custom_objects=custom_objects_dict
+        )
         scaler_planner = joblib.load(PLANNER_SCALER_FILE)
         with open(PLANNER_COLS_FILE, 'r') as f:
             cols_planner = json.load(f)
         
-        model_risk = tf.keras.models.load_model(RISK_MODEL_FILE)
+        # El modelo de Riesgos (Clasificador) NO usa la pérdida quantile
+        model_risk = tf.keras.models.load_model(RISK_MODEL_FILE) 
         scaler_risk = joblib.load(RISK_SCALER_FILE)
         with open(RISK_COLS_FILE, 'r') as f:
             cols_risk = json.load(f)
         baselines_clima = joblib.load(RISK_BASELINES_FILE)
         
-        model_tmo = tf.keras.models.load_model(TMO_MODEL_FILE)
+        # El modelo TMO SÍ usa la pérdida quantile
+        model_tmo = tf.keras.models.load_model(
+            TMO_MODEL_FILE, 
+            custom_objects=custom_objects_dict
+        )
         scaler_tmo = joblib.load(TMO_SCALER_FILE)
         with open(TMO_COLS_FILE, 'r') as f:
             cols_tmo = json.load(f)
+        # --- Fin del ajuste ---
         
         print("  [OK] Todos los modelos, scalers y columnas cargados.")
     except Exception as e:
@@ -553,7 +590,8 @@ def main(horizonte_dias):
     df_future_features = df_full[df_full['ts'] >= start_future].copy()
     
     # Preparar Dummies y escalar
-    X_planner = pd.get_dummies(df_future_features, columns=['dow', 'month', 'hour'])
+    # (Ajustado a las features v9)
+    X_planner = pd.get_dummies(df_future_features, columns=['month', 'semana_del_mes'])
     X_planner = X_planner.reindex(columns=cols_planner, fill_value=0)
     
     # Rellenar NaNs de lags/MAs iniciales
@@ -594,7 +632,8 @@ def main(horizonte_dias):
             df_tmo_features[col] = 0 # Fallback
             
     # Preparar Dummies y escalar
-    X_tmo = pd.get_dummies(df_tmo_features, columns=['dow', 'month', 'hour'])
+    # (Ajustado a las features v9)
+    X_tmo = pd.get_dummies(df_tmo_features, columns=['month', 'semana_del_mes'])
     X_tmo = X_tmo.reindex(columns=cols_tmo, fill_value=0)
     
     numeric_cols_tmo = X_tmo.select_dtypes(include=np.number).columns
