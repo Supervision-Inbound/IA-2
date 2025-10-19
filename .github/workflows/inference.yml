@@ -19,8 +19,8 @@ jobs:
     
     # Permisos para que la Action pueda descargar de Releases y hacer commit al repo
     permissions:
-      contents: write  # Para hacer commit de las predicciones
-      pull-requests: write # Necesario para algunas actions de commit
+      contents: write 
+      pull-requests: write
 
     steps:
       # --- 1. CONFIGURACIÓN INICIAL ---
@@ -28,36 +28,29 @@ jobs:
       - name: 1. Checkout del Repositorio
         uses: actions/checkout@v4
         with:
-          # Necesitamos el historial para calcular lags, si el script lo requiere
           fetch-depth: 0 
 
       - name: 2. Configurar Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          cache: 'pip' # Cache para acelerar instalaciones futuras
+          cache: 'pip' 
 
       # --- 2. OBTENCIÓN DE MODELOS ---
 
       - name: 3. Crear Directorio de Modelos
         run: mkdir -p models
-        # El script de inferencia probablemente buscará los modelos en /models
 
+      # --- PASO CORREGIDO ---
       - name: 4. Descargar Modelos desde Release (AI-2)
         uses: robinraju/release-downloader@v1.8
         with:
-          # Usa el repositorio actual
           repository: ${{ github.repository }}
-          # Token para acceder a releases (incluso privadas)
           token: ${{ secrets.GITHUB_TOKEN }}
-          # El nombre de la Release/Tag de donde bajar
           tag: 'AI-2'
-          # El nombre del archivo ZIP que subiste (basado en tu script de entreno)
-          fileName: 'artefactos_tres_especialistas_v7.zip'
-          # Dónde guardar el ZIP
+          # Al no especificar 'fileName', descarga todos los 12 assets
           downloadPath: 'models/'
-          # Descomprimir el ZIP en el 'downloadPath' ('models/')
-          extract: true
+          # No se necesita 'extract'
 
       - name: 5. Verificar Modelos Descargados (Opcional)
         run: |
@@ -69,11 +62,9 @@ jobs:
       - name: 6. Instalar Dependencias de IA
         run: |
           pip install -r requirements.txt
-          # (Asegúrate de tener requirements.txt en tu repositorio)
 
       - name: 7. Ejecutar Pipeline de Inferencia
         run: |
-          # El comando que mencionaste, generando los archivos en /public
           python -m src.main --horizonte 120
 
       # --- 4. PUBLICACIÓN DE RESULTADOS ---
@@ -82,12 +73,7 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: 'CI: Actualización automática de predicciones IA'
-          
-          # Patrón de los archivos que debe "commitear"
-          # Solo buscará cambios en estos 3 archivos exactos
           file_pattern: 'public/Predicion_daria.json public/prediccion_horaria.json public/alertas_climaticas.json'
-          
-          # Opciones de autoría para el bot
           commit_user_name: 'IA Prediction Bot'
           commit_user_email: 'actions@github.com'
           commit_author: 'IA Prediction Bot <actions@github.com>'
