@@ -152,13 +152,17 @@ def main(horizonte_dias):
     # --- 1. Cargar Modelos y Artefactos (v7) ---
     print("\n--- Fase 1: Cargando Modelos y Artefactos (v7) ---")
     try:
-        # No se necesita custom_objects para modelos v7 (MSE)
         model_planner = tf.keras.models.load_model(PLANNER_MODEL_FILE); scaler_planner = joblib.load(PLANNER_SCALER_FILE)
         with open(PLANNER_COLS_FILE, 'r') as f: cols_planner = json.load(f)
-        # PLANNER_BASELINES no existe para v7
         model_risk = tf.keras.models.load_model(RISK_MODEL_FILE); scaler_risk = joblib.load(RISK_SCALER_FILE)
-        try: with open(RISK_COLS_FILE, 'r') as f: cols_risk = json.load(f)
-        except FileNotFoundError: print(f"  [Adv] {RISK_COLS_FILE} no encontrado."); cols_risk = []
+
+        # --- AJUSTE: Corrección indentación ---
+        try:
+            with open(RISK_COLS_FILE, 'r') as f: cols_risk = json.load(f)
+        except FileNotFoundError: # <-- Indentación Correcta
+            print(f"  [Adv] {RISK_COLS_FILE} no encontrado."); cols_risk = []
+        # --- Fin Ajuste ---
+
         try: baselines_clima = joblib.load(RISK_BASELINES_FILE)
         except FileNotFoundError: print(f"  [Adv] {RISK_BASELINES_FILE} no encontrado."); baselines_clima = pd.DataFrame()
         model_tmo = tf.keras.models.load_model(TMO_MODEL_FILE); scaler_tmo = joblib.load(TMO_SCALER_FILE)
@@ -211,19 +215,15 @@ def main(horizonte_dias):
 
     # --- 5. Pipeline Llamadas (MLP v7) ---
     print("\n--- Fase 5: Pipeline de Llamadas (Planificador MLP v7) ---")
-    # Combinar histórico procesado + futuro para calcular lags/MAs
     df_full = pd.concat([df_hosting_processed, df_future], ignore_index=True).sort_values('ts')
     for lag in [24, 48, 72, 168]: df_full[f'lag_{lag}'] = df_full[TARGET_CALLS].shift(lag)
     for window in [24, 72, 168]: df_full[f'ma_{window}'] = df_full[TARGET_CALLS].shift(1).rolling(window, min_periods=1).mean()
-    df_future_features = df_full[df_full['ts'] >= start_future].copy() # Filtrar futuro ya con lags/MAs
-    # Preparar Dummies y escalar (v7)
+    df_future_features = df_full[df_full['ts'] >= start_future].copy()
     X_planner = pd.get_dummies(df_future_features, columns=['dow', 'month', 'hour']) # Dummies v7
     X_planner = X_planner.reindex(columns=cols_planner, fill_value=0)
-    # Rellenar NaNs iniciales de lags/MAs
     numeric_cols_planner = X_planner.select_dtypes(include=np.number).columns
     means = X_planner[numeric_cols_planner].mean(); X_planner[numeric_cols_planner] = X_planner[numeric_cols_planner].fillna(means).fillna(0)
     X_planner_s = scaler_planner.transform(X_planner)
-    # Predecir
     df_future['llamadas_hora'] = model_planner.predict(X_planner_s).clip(0).astype(int)
     print("  [OK] Predicciones llamadas (MLP v7) generadas.")
 
@@ -232,15 +232,13 @@ def main(horizonte_dias):
     if df_tmo_hist.empty: print("  [Adv] TMO_HISTORICO vacío."); last_tmo_data = pd.Series(dtype='float64')
     else: last_tmo_data = df_tmo_hist.sort_values('ts').iloc[-1]
     seed_cols = ['proporcion_comercial', 'proporcion_tecnica', 'tmo_comercial', 'tmo_tecnico']
-    df_tmo_features_future = df_future.copy(); df_tmo_features_future[TARGET_CALLS] = df_tmo_features_future['llamadas_hora'] # Usa llamadas predichas v7
+    df_tmo_features_future = df_future.copy(); df_tmo_features_future[TARGET_CALLS] = df_tmo_features_future['llamadas_hora']
     for col in seed_cols: df_tmo_features_future[col] = last_tmo_data.get(col, 0)
-    # Preparar Dummies y escalar (v7)
     X_tmo = pd.get_dummies(df_tmo_features_future, columns=['dow', 'month', 'hour']) # Dummies v7
     X_tmo = X_tmo.reindex(columns=cols_tmo, fill_value=0)
     numeric_cols_tmo = X_tmo.select_dtypes(include=np.number).columns
     means_tmo = X_tmo[numeric_cols_tmo].mean(); X_tmo[numeric_cols_tmo] = X_tmo[numeric_cols_tmo].fillna(means_tmo).fillna(0)
     X_tmo_s = scaler_tmo.transform(X_tmo)
-    # Predecir
     df_future['tmo_hora'] = model_tmo.predict(X_tmo_s).clip(0)
     print("  [OK] Predicciones TMO (MLP v7) generadas.")
 
