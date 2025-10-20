@@ -179,13 +179,20 @@ def compute_holiday_factors(df_hist, holidays_set,
 def apply_holiday_adjustment(df_future, holidays_set,
                              factors_calls_by_hour, factors_tmo_by_hour,
                              col_calls_future="calls", col_tmo_future="tmo_s"):
+    """
+    FIX: calcular la hora directamente desde el índice ya en TZ local
+    para evitar NaN -> astype(int) y errores de casting.
+    """
     d = df_future.copy()
     if not isinstance(d.index, pd.DatetimeIndex):
         d = d.set_index('ts')
-    d_parts = add_time_parts(d.copy())
-    is_hol = _series_is_holiday(d_parts.index, holidays_set).reindex(d_parts.index, fill_value=False)
-    hours = d_parts["hour"].astype(int).values
 
+    idx_local = _ensure_local_tz(d.index)
+    d_parts = d.copy()
+    d_parts["hour"] = idx_local.hour  # ndarray int, sin NaN
+    is_hol = _series_is_holiday(idx_local, holidays_set).reindex(idx_local, fill_value=False)
+
+    hours = idx_local.hour.to_numpy()
     call_f = np.array([factors_calls_by_hour.get(int(h), 1.0) for h in hours])
     tmo_f  = np.array([factors_tmo_by_hour.get(int(h), 1.0) for h in hours])
 
@@ -213,14 +220,14 @@ def apply_post_holiday_adjustment(df_future, holidays_set, post_calls_by_hour,
             ix = pd.to_datetime(ix, utc=True, errors='coerce').tz_convert(TZ)
         return ix
 
-    prev_dates = _to_local(prev_idx).date
-    curr_dates = _to_local(idx).date
+    prev_local = _to_local(prev_idx)
+    curr_local = _to_local(idx)
 
-    is_prev_hol = pd.Series([dd in holidays_set for dd in prev_dates], index=idx, dtype=bool)
-    is_today_hol = pd.Series([dd in holidays_set for dd in curr_dates], index=idx, dtype=bool)
+    is_prev_hol = pd.Series([dd in holidays_set for dd in prev_local.date], index=idx, dtype=bool)
+    is_today_hol = pd.Series([dd in holidays_set for dd in curr_local.date], index=idx, dtype=bool)
     is_post = (~is_today_hol) & (is_prev_hol)
 
-    hours = _to_local(idx).hour.astype(int)
+    hours = curr_local.hour.to_numpy()
     factors = np.array([post_calls_by_hour.get(int(h), 1.0) for h in hours])
 
     out = d.copy()
@@ -608,7 +615,7 @@ def main(horizonte_dias):
 
     pred_calls = dfp.loc[future_idx, TARGET_CALLS].copy()
 
-    # --- 6. TMO (se mantiene tu ruta) ---
+    # --- 6. Pipeline de TMO (se mantiene tu lógica/rutas) ---
     print("\n--- Fase 6: Pipeline de TMO (se mantiene tu lógica/rutas) ---")
     if df_tmo_hist.empty:
         print("  [Adv] TMO_HISTORICO vacío."); last_tmo_data = pd.Series(dtype='float64')
@@ -704,4 +711,5 @@ if __name__ == "__main__":
     parser.add_argument("--horizonte", type=int, default=120, help="Horizonte predicción días")
     args = parser.parse_args()
     main(horizonte_dias=args.horizonte)
+
 
