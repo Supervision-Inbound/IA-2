@@ -45,14 +45,14 @@ def _is_holiday(ts, holidays_set):
     try:
         d = ts.tz_convert(TZ).date()
     except Exception:
-        d = ts.date()
+        d = pd.to_datetime(ts).date()
     return d in holidays_set
 
 def _series_is_holiday(idx, holidays_set):
     try:
-        idx_dates = idx.tz_convert(TZ).date
+        idx_dates = idx.tzconvert(TZ).date if hasattr(idx, "tzconvert") else idx.tz_convert(TZ).date
     except Exception:
-        idx_dates = idx.date
+        idx_dates = pd.to_datetime(idx, utc=True, errors='coerce').tz_convert(TZ).date
     return pd.Series([d in holidays_set for d in idx_dates], index=idx, dtype=bool)
 
 def _safe_ratio(num, den, fallback=1.0):
@@ -74,9 +74,12 @@ def compute_holiday_factors(df_hist, holidays_set,
                             col_calls=TARGET_CALLS, col_tmo=TARGET_TMO):
     """
     Calcula factores por HORA (mediana feriado vs normal) + factores globales
-    y factores del DÍA POST-FERIADO (por hora). Réplica del core bueno.
+    y factores del DÍA POST-FERIADO (por hora).
     """
-    dfh = add_time_parts(df_hist[[c for c in [col_calls, col_tmo] if c in df_hist.columns]].copy())
+    dfh = df_hist.copy()
+    if not isinstance(dfh.index, pd.DatetimeIndex):
+        dfh = dfh.set_index('ts')
+    dfh = add_time_parts(dfh)
     dfh["is_holiday"] = _series_is_holiday(dfh.index, holidays_set)
 
     # Medianas por hora
@@ -103,7 +106,6 @@ def compute_holiday_factors(df_hist, holidays_set,
                             fallback=global_calls_factor)
         for h in range(24)
     }
-    # Límites suaves (idénticos al core) :contentReference[oaicite:3]{index=3}
     factors_calls_by_hour = {h: float(np.clip(v, 0.10, 1.60)) for h, v in factors_calls_by_hour.items()}
 
     if med_hol_tmo is not None:
@@ -124,10 +126,10 @@ def compute_holiday_factors(df_hist, holidays_set,
     post_calls_by_hour = {
         int(h): _safe_ratio(med_post_calls.get(h, np.nan),
                             med_nor_calls.get(h, np.nan),
-                            fallback=1.05)  # leve alza por defecto
+                            fallback=1.05)
         for h in range(24)
     }
-    post_calls_by_hour = {h: float(np.clip(v, 0.90, 1.80)) for h, v in post_calls_by_hour.items()}  # :contentReference[oaicite:4]{index=4}
+    post_calls_by_hour = {h: float(np.clip(v, 0.90, 1.80)) for h, v in post_calls_by_hour.items()}
 
     return (factors_calls_by_hour, factors_tmo_by_hour,
             global_calls_factor, global_tmo_factor, post_calls_by_hour)
@@ -136,16 +138,19 @@ def apply_holiday_adjustment(df_future, holidays_set,
                              factors_calls_by_hour, factors_tmo_by_hour,
                              col_calls_future="calls", col_tmo_future="tmo_s"):
     """
-    Aplica factores por hora SOLO en horas/fechas feriado (idéntico al core). :contentReference[oaicite:5]{index=5}
+    Aplica factores por hora SOLO en horas/fechas feriado.
     """
-    d = add_time_parts(df_future.copy())
-    is_hol = _series_is_holiday(d.index, holidays_set)
-    hours = d["hour"].astype(int).values
+    d = df_future.copy()
+    if not isinstance(d.index, pd.DatetimeIndex):
+        d = d.set_index('ts')
+    d_parts = add_time_parts(d.copy())
+    is_hol = _series_is_holiday(d_parts.index, holidays_set)
+    hours = d_parts["hour"].astype(int).values
 
     call_f = np.array([factors_calls_by_hour.get(int(h), 1.0) for h in hours])
     tmo_f  = np.array([factors_tmo_by_hour.get(int(h), 1.0) for h in hours])
 
-    out = df_future.copy()
+    out = d.copy()
     mask = is_hol.values
     out.loc[mask, col_calls_future] = np.round(out.loc[mask, col_calls_future].astype(float) * call_f[mask]).astype(int)
     out.loc[mask, col_tmo_future]   = np.round(out.loc[mask, col_tmo_future].astype(float)   * tmo_f[mask]).astype(int)
@@ -154,16 +159,20 @@ def apply_holiday_adjustment(df_future, holidays_set,
 def apply_post_holiday_adjustment(df_future, holidays_set, post_calls_by_hour,
                                   col_calls_future="calls"):
     """
-    Ajuste para el DÍA POST-FERIADO: si el día anterior fue feriado, aplica factor por hora. :contentReference[oaicite:6]{index=6}
+    Ajuste para el DÍA POST-FERIADO: si el día anterior fue feriado, aplica factor por hora.
     """
-    idx = df_future.index
+    d = df_future.copy()
+    if not isinstance(d.index, pd.DatetimeIndex):
+        d = d.set_index('ts')
+    idx = d.index
+
     prev_idx = (idx - pd.Timedelta(days=1))
     try:
         prev_dates = prev_idx.tz_convert(TZ).date
         curr_dates = idx.tz_convert(TZ).date
     except Exception:
-        prev_dates = prev_idx.date
-        curr_dates = idx.date
+        prev_dates = pd.to_datetime(prev_idx, utc=True, errors='coerce').tz_convert(TZ).date
+        curr_dates = pd.to_datetime(idx, utc=True, errors='coerce').tz_convert(TZ).date
 
     is_prev_hol = pd.Series([d in holidays_set for d in prev_dates], index=idx, dtype=bool)
     is_today_hol = pd.Series([d in holidays_set for d in curr_dates], index=idx, dtype=bool)
@@ -172,12 +181,13 @@ def apply_post_holiday_adjustment(df_future, holidays_set, post_calls_by_hour,
     hours = pd.Index(idx.hour, dtype=int)
     factors = np.array([post_calls_by_hour.get(int(h), 1.0) for h in hours])
 
-    out = df_future.copy()
+    out = d.copy()
     mask = is_post.values
     out.loc[mask, col_calls_future] = np.round(out.loc[mask, col_calls_future].astype(float) * factors[mask]).astype(int)
     return out
 
 # --- FUNCIONES DE UTILIDAD (originales) ---
+
 def read_data(path, hoja=None):
     path_lower = path.lower()
     if not os.path.exists(path): raise FileNotFoundError(f"No encontrado: {path}.")
@@ -198,6 +208,7 @@ def read_data(path, hoja=None):
         raise ValueError(f"Formato no soportado: {path}")
 
 def ensure_ts_and_tz(df):
+    df = df.copy()
     df.columns = [c.lower().strip().replace(' ', '_') for c in df.columns]
     date_col = next((c for c in df.columns if 'fecha' in c), None)
     hour_col = next((c for c in df.columns if 'hora' in c), None)
@@ -218,16 +229,44 @@ def ensure_ts_and_tz(df):
 
 def add_time_parts(df):
     df_copy = df.copy()
-    # Acepta index o columna ts
+
+    # Si existe columna ts, usamos .dt (Series) con TZ
     if 'ts' in df_copy.columns:
-        idx = df_copy['ts'].dt.tz_convert(TZ)
+        s = pd.to_datetime(df_copy['ts'], errors='coerce')
+        try:
+            if s.dt.tz is None:
+                s = s.dt.tz_localize(TZ, ambiguous="NaT", nonexistent="NaT")
+            else:
+                s = s.dt.tz_convert(TZ)
+        except Exception:
+            s = pd.to_datetime(s, utc=True, errors='coerce').dt.tz_convert(TZ)
+
+        df_copy['ts'] = s
+        df_copy['dow'] = s.dt.dayofweek
+        df_copy['month'] = s.dt.month
+        df_copy['hour'] = s.dt.hour
+        df_copy['day'] = s.dt.day
+        day_vals = df_copy['day']
+
     else:
-        idx = df_copy.index
-    df_copy["dow"] = idx.dayofweek
-    df_copy["month"] = idx.month
-    df_copy["hour"] = idx.hour
-    df_copy["day"] = idx.day
-    df_copy["es_dia_de_pago"] = df_copy.get('day', idx.day).isin([1,2,15,16,29,30,31]).astype(int)
+        # Si no hay ts, usamos el índice como DatetimeIndex con TZ
+        idx = pd.DatetimeIndex(df_copy.index)
+        try:
+            if idx.tz is None:
+                idx = idx.tz_localize(TZ)
+            else:
+                idx = idx.tz_convert(TZ)
+        except Exception:
+            idx = pd.to_datetime(idx, utc=True, errors='coerce').tz_convert(TZ)
+
+        df_copy['dow'] = idx.dayofweek
+        df_copy['month'] = idx.month
+        df_copy['hour'] = idx.hour
+        df_copy['day'] = idx.day
+        day_vals = pd.Series(idx.day, index=df_copy.index)
+
+    # Features cíclicas y “día de pago”
+    df_copy["es_dia_de_pago"] = day_vals.isin([1, 2, 15, 16, 29, 30, 31]).astype(int)
     df_copy["sin_hour"] = np.sin(2 * np.pi * df_copy["hour"] / 24)
     df_copy["cos_hour"] = np.cos(2 * np.pi * df_copy["hour"] / 24)
     df_copy["sin_dow"] = np.sin(2 * np.pi * df_copy["dow"] / 7)
@@ -261,6 +300,7 @@ def calculate_erlang_agents(calls_per_hour, tmo_seconds, occupancy_target=0.85):
     return agents.astype(int)
 
 # --- PIPELINE CLIMA (original) ---
+
 def fetch_future_weather(start_date, end_date):
     print("    [Clima] SIMULANDO API de clima futuro...")
     try:
@@ -413,6 +453,7 @@ def generate_alerts_json(df_per_comuna, df_risk_proba, proba_threshold=0.5, impa
     return json_output
 
 # --- FUNCIÓN PRINCIPAL ORQUESTADORA ---
+
 def main(horizonte_dias):
     print("="*60)
     print(f"INICIANDO PIPELINE DE INFERENCIA (réplica planner iterativo + feriados)")
@@ -507,7 +548,7 @@ def main(horizonte_dias):
     print("\n--- Fase 4: Pipeline de Clima (Analista de Riesgos) ---")
     df_weather_future_raw = fetch_future_weather(start_future, end_future)
 
-    # Riesgos climáticos (igual que tu script, no interfiere con planner)
+    # Riesgos climáticos
     df_agg_anomalies, df_per_comuna_anomalies = process_future_climate(
         df_weather_future_raw, baselines_clima if not baselines_clima.empty else pd.DataFrame()
     )
@@ -516,19 +557,24 @@ def main(horizonte_dias):
     df_future[numeric_cols_future] = df_future[numeric_cols_future].fillna(df_future[numeric_cols_future].mean())
     df_future = df_future.fillna(0)
 
-    if cols_risk and all(c in df_future.columns for c in cols_risk):
-        X_risk = df_future.reindex(columns=cols_risk, fill_value=0)
-        X_risk_s = scaler_risk.transform(X_risk)
-        df_future['risk_proba'] = model_risk.predict(X_risk_s)
-        print("  [OK] Predicciones riesgo generadas.")
-    else:
-        print("  [Adv] Faltan columnas/config risk. 'risk_proba'=0.")
-        df_future['risk_proba'] = 0.0
-
-    df_risk_proba_output = df_future[['ts', 'risk_proba']].copy()
+    if len(RISK_COLS_FILE) > 0 and 'risk_proba' not in df_future.columns:
+        if 'risk_proba' not in df_future.columns and isinstance(model_risk, tf.keras.Model):
+            if os.path.exists(RISK_COLS_FILE):
+                with open(RISK_COLS_FILE, 'r') as f: cols_risk = json.load(f)
+            else:
+                cols_risk = []
+            if cols_risk and all(c in df_future.columns for c in cols_risk):
+                X_risk = df_future.reindex(columns=cols_risk, fill_value=0)
+                X_risk_s = scaler_risk.transform(X_risk)
+                df_future['risk_proba'] = model_risk.predict(X_risk_s)
+                print("  [OK] Predicciones riesgo generadas.")
+            else:
+                print("  [Adv] Faltan columnas/config risk. 'risk_proba'=0.")
+                df_future['risk_proba'] = 0.0
+    df_risk_proba_output = df_future[['ts', 'risk_proba']].copy() if 'risk_proba' in df_future.columns else pd.DataFrame({'ts': df_future['ts'], 'risk_proba': 0.0})
     alertas_json_data = generate_alerts_json(df_per_comuna_anomalies, df_risk_proba_output)
 
-    # --- 5. Pipeline Llamadas (Planner iterativo, réplica core bueno) ---
+    # --- 5. Pipeline Llamadas (Planner iterativo, réplica) ---
     print("\n--- Fase 5: Planner iterativo de Llamadas (réplica) ---")
     # Base reciente (usar series limpias + feriados si existe)
     df_hist_base = df_hosting_processed[['ts', TARGET_CALLS, 'feriados']].copy().set_index('ts').sort_index()
@@ -544,7 +590,7 @@ def main(horizonte_dias):
         if 'feriados' in tmp.columns:
             tmp.loc[ts, 'feriados'] = int(_is_holiday(ts, feriados_list))
 
-        tmp = add_lags_mas(tmp, TARGET_CALLS)               # lags/MA como en entrenamiento :contentReference[oaicite:7]{index=7}
+        tmp = add_lags_mas(tmp, TARGET_CALLS)               # lags/MA como en entrenamiento
         tmp = add_time_parts(tmp)                            # dow/month/hour + sines/cosines
 
         X = pd.get_dummies(tmp.tail(1), columns=['dow','month','hour'], drop_first=False)
@@ -592,35 +638,34 @@ def main(horizonte_dias):
     df_hourly["calls"] = np.round(pred_calls).astype(int)
     df_hourly["tmo_s"] = tmo_pred.astype(int)
 
-    # --- 6.2 AJUSTES de feriado y post-feriado (como core bueno) ---
+    # --- 6.2 AJUSTES de feriado y post-feriado ---
     if len(feriados_list) > 0:
         f_calls_by_hour, f_tmo_by_hour, g_calls, g_tmo, post_calls_by_hour = compute_holiday_factors(
             df_hosting_processed.set_index('ts')[[c for c in [TARGET_CALLS, TARGET_TMO] if c in df_hosting_processed.columns]],
             feriados_list
-        )  # :contentReference[oaicite:8]{index=8}
+        )
 
         # Ajuste en el mismo día feriado
         df_hourly = apply_holiday_adjustment(
             df_hourly, feriados_list,
             f_calls_by_hour, f_tmo_by_hour,
             col_calls_future="calls", col_tmo_future="tmo_s"
-        )  # :contentReference[oaicite:9]{index=9}
+        )
 
         # Rebote del día siguiente
         df_hourly = apply_post_holiday_adjustment(
             df_hourly, feriados_list, post_calls_by_hour,
             col_calls_future="calls"
-        )  # :contentReference[oaicite:10]{index=10}
+        )
 
-    # --- (Opcional) CAP anti-outliers post-ajuste (idéntico a tu core) ---
+    # --- (Opcional) CAP anti-outliers post-ajuste ---
     # df_hourly["calls"] = apply_outlier_cap(df_hourly["calls"], weekday_k=6.0, weekend_k=7.0)
-    # (lo dejo comentado para no alterar tu comportamiento si no lo usas)
 
     # --- 7. Generar Salidas Finales ---
     print("\n--- Fase 7: Generando Archivos JSON de Salida ---")
     os.makedirs(PUBLIC_DIR, exist_ok=True)
 
-    # Agentes (tu versión simple por ocupación; si quieres Erlang C exacto, avísame)
+    # Agentes (ocupación simple; si quieres Erlang C exacto, lo integramos)
     df_hourly["agentes"] = calculate_erlang_agents(df_hourly["calls"], df_hourly["tmo_s"])
 
     # Serializar horarios
@@ -635,7 +680,8 @@ def main(horizonte_dias):
 
     # Diario (suma llamadas, promedio TMO ponderado por llamadas)
     df_tmp = df_hourly.copy()
-    df_tmp["fecha"] = pd.to_datetime(df_tmp.index).tz_convert(TZ).date
+    idx_tz = pd.DatetimeIndex(df_tmp.index).tz_convert(TZ)
+    df_tmp["fecha"] = idx_tz.date
     df_tmp["tmo_ponderado_num"] = df_tmp["tmo_s"] * df_tmp["calls"]
 
     df_diaria_agg = (df_tmp.groupby('fecha')
