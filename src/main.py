@@ -101,7 +101,13 @@ def _series_is_holiday(idx, holidays_set):
         else: s = s.tz_convert(TZ)
     except Exception:
         s = pd.to_datetime(s, utc=True, errors='coerce').tz_convert(TZ)
-    return pd.Series([d in holidays_set for d in s.date], index=s, dtype=bool)
+    out = []
+    for ts in s:
+        if pd.isna(ts):
+            out.append(False)
+        else:
+            out.append(ts.date() in holidays_set)
+    return pd.Series(out, index=s, dtype=bool)
 
 def _safe_ratio(num, den, fallback=1.0):
     num = float(num) if num is not None and not pd.isna(num) else np.nan
@@ -117,6 +123,19 @@ def add_lags_mas(df: pd.DataFrame, target_col: str) -> pd.DataFrame:
     for window in [24, 72, 168]:
         d[f'ma_{window}'] = d[target_col].shift(1).rolling(window, min_periods=1).mean()
     return d
+
+def _hours_and_holiday_flags(idx, holidays_set):
+    """Devuelve (hours_float_array, holiday_bool_array) robusto a NaT."""
+    idx_local = _ensure_local_tz(idx)
+    hours, hol = [], []
+    for ts in idx_local:
+        if pd.isna(ts):
+            hours.append(np.nan)
+            hol.append(False)
+        else:
+            hours.append(ts.hour)
+            hol.append(ts.date() in holidays_set)
+    return np.array(hours, dtype=float), np.array(hol, dtype=bool)
 
 def compute_holiday_factors(df_hist, holidays_set,
                             col_calls=TARGET_CALLS, col_tmo=TARGET_TMO):
@@ -180,24 +199,19 @@ def apply_holiday_adjustment(df_future, holidays_set,
                              factors_calls_by_hour, factors_tmo_by_hour,
                              col_calls_future="calls", col_tmo_future="tmo_s"):
     """
-    FIX: calcular la hora directamente desde el índice ya en TZ local
-    para evitar NaN -> astype(int) y errores de casting.
+    FIX: calcular hora/feriado directamente desde el índice local y tolerar NaT.
     """
     d = df_future.copy()
     if not isinstance(d.index, pd.DatetimeIndex):
         d = d.set_index('ts')
 
-    idx_local = _ensure_local_tz(d.index)
-    d_parts = d.copy()
-    d_parts["hour"] = idx_local.hour  # ndarray int, sin NaN
-    is_hol = _series_is_holiday(idx_local, holidays_set).reindex(idx_local, fill_value=False)
+    hours, hol_flags = _hours_and_holiday_flags(d.index, holidays_set)
 
-    hours = idx_local.hour.to_numpy()
-    call_f = np.array([factors_calls_by_hour.get(int(h), 1.0) for h in hours])
-    tmo_f  = np.array([factors_tmo_by_hour.get(int(h), 1.0) for h in hours])
+    call_f = np.array([1.0 if np.isnan(h) else factors_calls_by_hour.get(int(h), 1.0) for h in hours])
+    tmo_f  = np.array([1.0 if np.isnan(h) else factors_tmo_by_hour.get(int(h), 1.0) for h in hours])
 
     out = d.copy()
-    mask = is_hol.values
+    mask = hol_flags
     out.loc[mask, col_calls_future] = np.round(out.loc[mask, col_calls_future].astype(float) * call_f[mask]).astype(int)
     out.loc[mask, col_tmo_future]   = np.round(out.loc[mask, col_tmo_future].astype(float)   * tmo_f[mask]).astype(int)
     return out
@@ -223,15 +237,15 @@ def apply_post_holiday_adjustment(df_future, holidays_set, post_calls_by_hour,
     prev_local = _to_local(prev_idx)
     curr_local = _to_local(idx)
 
-    is_prev_hol = pd.Series([dd in holidays_set for dd in prev_local.date], index=idx, dtype=bool)
-    is_today_hol = pd.Series([dd in holidays_set for dd in curr_local.date], index=idx, dtype=bool)
+    is_prev_hol = np.array([False if pd.isna(ts) else (ts.date() in holidays_set) for ts in prev_local], dtype=bool)
+    is_today_hol = np.array([False if pd.isna(ts) else (ts.date() in holidays_set) for ts in curr_local], dtype=bool)
     is_post = (~is_today_hol) & (is_prev_hol)
 
-    hours = curr_local.hour.to_numpy()
-    factors = np.array([post_calls_by_hour.get(int(h), 1.0) for h in hours])
+    hours = np.array([np.nan if pd.isna(ts) else ts.hour for ts in curr_local], dtype=float)
+    factors = np.array([1.0 if np.isnan(h) else post_calls_by_hour.get(int(h), 1.0) for h in hours])
 
     out = d.copy()
-    mask = is_post.values
+    mask = is_post
     out.loc[mask, col_calls_future] = np.round(out.loc[mask, col_calls_future].astype(float) * factors[mask]).astype(int)
     return out
 
@@ -663,7 +677,7 @@ def main(horizonte_dias):
 
     # ----- Horaria -----
     df_horaria = df_hourly.copy().reset_index().rename(columns={"index": "ts"})
-    ts_local = _ensure_local_tz(df_horaria["ts"])
+    ts_local = _ensure_local_tz(df_horaria["ts"]) 
     df_horaria["ts"] = ts_local.dt.strftime('%Y-%m-%d %H:%M:%S')      # legado
     df_horaria["ts_iso"] = ts_local.dt.strftime('%Y-%m-%dT%H:%M:%S')  # ISO local
 
@@ -711,5 +725,4 @@ if __name__ == "__main__":
     parser.add_argument("--horizonte", type=int, default=120, help="Horizonte predicción días")
     args = parser.parse_args()
     main(horizonte_dias=args.horizonte)
-
 
