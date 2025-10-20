@@ -43,17 +43,15 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 
 def _is_holiday(ts, holidays_set):
     try:
-        d = ts.tz_convert(TZ).date()
+        d = pd.to_datetime(ts, utc=True).tz_convert(TZ).date()
     except Exception:
         d = pd.to_datetime(ts).date()
     return d in holidays_set
 
 def _series_is_holiday(idx, holidays_set):
-    try:
-        idx_dates = idx.tzconvert(TZ).date if hasattr(idx, "tzconvert") else idx.tz_convert(TZ).date
-    except Exception:
-        idx_dates = pd.to_datetime(idx, utc=True, errors='coerce').tz_convert(TZ).date
-    return pd.Series([d in holidays_set for d in idx_dates], index=idx, dtype=bool)
+    # idx puede traer mezcla aware/naive -> homogeneizar a UTC primero
+    s = pd.to_datetime(pd.Index(idx), utc=True, errors='coerce').tz_convert(TZ)
+    return pd.Series([d in holidays_set for d in s.date], index=s, dtype=bool)
 
 def _safe_ratio(num, den, fallback=1.0):
     num = float(num) if num is not None and not pd.isna(num) else np.nan
@@ -80,7 +78,7 @@ def compute_holiday_factors(df_hist, holidays_set,
     if not isinstance(dfh.index, pd.DatetimeIndex):
         dfh = dfh.set_index('ts')
     dfh = add_time_parts(dfh)
-    dfh["is_holiday"] = _series_is_holiday(dfh.index, holidays_set)
+    dfh["is_holiday"] = _series_is_holiday(dfh.index, holidays_set).reindex(dfh.index, fill_value=False)
 
     # Medianas por hora
     med_hol_calls = dfh[dfh["is_holiday"]].groupby("hour")[col_calls].median()
@@ -144,7 +142,7 @@ def apply_holiday_adjustment(df_future, holidays_set,
     if not isinstance(d.index, pd.DatetimeIndex):
         d = d.set_index('ts')
     d_parts = add_time_parts(d.copy())
-    is_hol = _series_is_holiday(d_parts.index, holidays_set)
+    is_hol = _series_is_holiday(d_parts.index, holidays_set).reindex(d_parts.index, fill_value=False)
     hours = d_parts["hour"].astype(int).values
 
     call_f = np.array([factors_calls_by_hour.get(int(h), 1.0) for h in hours])
@@ -167,18 +165,14 @@ def apply_post_holiday_adjustment(df_future, holidays_set, post_calls_by_hour,
     idx = d.index
 
     prev_idx = (idx - pd.Timedelta(days=1))
-    try:
-        prev_dates = prev_idx.tz_convert(TZ).date
-        curr_dates = idx.tz_convert(TZ).date
-    except Exception:
-        prev_dates = pd.to_datetime(prev_idx, utc=True, errors='coerce').tz_convert(TZ).date
-        curr_dates = pd.to_datetime(idx, utc=True, errors='coerce').tz_convert(TZ).date
+    prev_dates = pd.to_datetime(prev_idx, utc=True, errors='coerce').tz_convert(TZ).date
+    curr_dates = pd.to_datetime(idx, utc=True, errors='coerce').tz_convert(TZ).date
 
-    is_prev_hol = pd.Series([d in holidays_set for d in prev_dates], index=idx, dtype=bool)
-    is_today_hol = pd.Series([d in holidays_set for d in curr_dates], index=idx, dtype=bool)
+    is_prev_hol = pd.Series([dd in holidays_set for dd in prev_dates], index=idx, dtype=bool)
+    is_today_hol = pd.Series([dd in holidays_set for dd in curr_dates], index=idx, dtype=bool)
     is_post = (~is_today_hol) & (is_prev_hol)
 
-    hours = pd.Index(idx.hour, dtype=int)
+    hours = pd.Index(pd.to_datetime(idx, utc=True).tz_convert(TZ).hour, dtype=int)
     factors = np.array([post_calls_by_hour.get(int(h), 1.0) for h in hours])
 
     out = d.copy()
@@ -220,53 +214,34 @@ def ensure_ts_and_tz(df):
         print(f"  [Adv] Formato dd-mm-yyyy no detectado. Intentando inferir.")
         df["ts"] = pd.to_datetime(df[date_col].astype(str) + ' ' + df[hour_col].astype(str), errors='coerce')
     df = df.dropna(subset=["ts"])
-    if df["ts"].dt.tz is None:
-        df["ts"] = df["ts"].dt.tz_localize(TZ, ambiguous="NaT", nonexistent="NaT")
-    else:
-        df["ts"] = df["ts"].dt.tz_convert(TZ)
+    # Homogeneizar a UTC y luego convertir a TZ (evita mezcla aware/naive)
+    df["ts"] = pd.to_datetime(df["ts"], utc=True, errors='coerce').dt.tz_convert(TZ)
     df = df.dropna(subset=["ts"])
     return df.sort_values("ts")
 
 def add_time_parts(df):
     df_copy = df.copy()
 
-    # Si existe columna ts, usamos .dt (Series) con TZ
     if 'ts' in df_copy.columns:
-        s = pd.to_datetime(df_copy['ts'], errors='coerce')
-        try:
-            if s.dt.tz is None:
-                s = s.dt.tz_localize(TZ, ambiguous="NaT", nonexistent="NaT")
-            else:
-                s = s.dt.tz_convert(TZ)
-        except Exception:
-            s = pd.to_datetime(s, utc=True, errors='coerce').dt.tz_convert(TZ)
-
+        # Columna ts -> usar .dt y normalizar TZ (homogeneizar a UTC primero)
+        s = pd.to_datetime(df_copy['ts'], errors='coerce', utc=True).dt.tz_convert(TZ)
         df_copy['ts'] = s
         df_copy['dow'] = s.dt.dayofweek
         df_copy['month'] = s.dt.month
         df_copy['hour'] = s.dt.hour
         df_copy['day'] = s.dt.day
         day_vals = df_copy['day']
-
     else:
-        # Si no hay ts, usamos el índice como DatetimeIndex con TZ
-        idx = pd.DatetimeIndex(df_copy.index)
-        try:
-            if idx.tz is None:
-                idx = idx.tz_localize(TZ)
-            else:
-                idx = idx.tz_convert(TZ)
-        except Exception:
-            idx = pd.to_datetime(idx, utc=True, errors='coerce').tz_convert(TZ)
+        # Index -> homogeneizar a UTC y luego a TZ para evitar mezcla aware/naive
+        s = pd.to_datetime(pd.Index(df_copy.index), errors='coerce', utc=True).tz_convert(TZ)
+        df_copy['dow'] = s.dayofweek
+        df_copy['month'] = s.month
+        df_copy['hour'] = s.hour
+        df_copy['day'] = s.day
+        day_vals = pd.Series(s.day, index=df_copy.index)
 
-        df_copy['dow'] = idx.dayofweek
-        df_copy['month'] = idx.month
-        df_copy['hour'] = idx.hour
-        df_copy['day'] = idx.day
-        day_vals = pd.Series(idx.day, index=df_copy.index)
-
-    # Features cíclicas y “día de pago”
-    df_copy["es_dia_de_pago"] = day_vals.isin([1, 2, 15, 16, 29, 30, 31]).astype(int)
+    # Features cíclicas + día de pago
+    df_copy["es_dia_de_pago"] = pd.Series(day_vals).isin([1, 2, 15, 16, 29, 30, 31]).astype(int)
     df_copy["sin_hour"] = np.sin(2 * np.pi * df_copy["hour"] / 24)
     df_copy["cos_hour"] = np.cos(2 * np.pi * df_copy["hour"] / 24)
     df_copy["sin_dow"] = np.sin(2 * np.pi * df_copy["dow"] / 7)
@@ -375,10 +350,7 @@ def process_future_climate(df_future_weather, df_baselines):
     df = normalize_climate_columns(df_future_weather.copy())
     if 'ts' not in df.columns or df['ts'].isnull().all():
         df['ts'] = pd.to_datetime(df['ts'], errors='coerce')
-    if df["ts"].dt.tz is None:
-        df["ts"] = df["ts"].dt.tz_localize(TZ, ambiguous="NaT", nonexistent="NaT")
-    else:
-        df["ts"] = df["ts"].dt.tz_convert(TZ)
+    df["ts"] = pd.to_datetime(df["ts"], utc=True, errors='coerce').dt.tz_convert(TZ)
     df = df.dropna(subset=['ts']).sort_values(['comuna', 'ts'])
     df['dow'] = df['ts'].dt.dayofweek; df['hour'] = df['ts'].dt.hour
 
@@ -511,7 +483,6 @@ def main(horizonte_dias):
     elif TARGET_CALLS not in df_hosting.columns:
         raise ValueError(f"No se encontró {TARGET_CALLS} ni 'recibidos'.")
 
-    # Solo agregamos por ts lo indispensable
     df_hosting_agg = df_hosting.groupby("ts").agg({TARGET_CALLS: 'sum', 'feriados': 'max'}).reset_index()
     df_hosting_processed = add_time_parts(df_hosting_agg)
 
@@ -557,21 +528,20 @@ def main(horizonte_dias):
     df_future[numeric_cols_future] = df_future[numeric_cols_future].fillna(df_future[numeric_cols_future].mean())
     df_future = df_future.fillna(0)
 
-    if len(RISK_COLS_FILE) > 0 and 'risk_proba' not in df_future.columns:
-        if 'risk_proba' not in df_future.columns and isinstance(model_risk, tf.keras.Model):
-            if os.path.exists(RISK_COLS_FILE):
-                with open(RISK_COLS_FILE, 'r') as f: cols_risk = json.load(f)
-            else:
-                cols_risk = []
-            if cols_risk and all(c in df_future.columns for c in cols_risk):
-                X_risk = df_future.reindex(columns=cols_risk, fill_value=0)
-                X_risk_s = scaler_risk.transform(X_risk)
-                df_future['risk_proba'] = model_risk.predict(X_risk_s)
-                print("  [OK] Predicciones riesgo generadas.")
-            else:
-                print("  [Adv] Faltan columnas/config risk. 'risk_proba'=0.")
-                df_future['risk_proba'] = 0.0
-    df_risk_proba_output = df_future[['ts', 'risk_proba']].copy() if 'risk_proba' in df_future.columns else pd.DataFrame({'ts': df_future['ts'], 'risk_proba': 0.0})
+    if os.path.exists(RISK_COLS_FILE):
+        with open(RISK_COLS_FILE, 'r') as f: cols_risk = json.load(f)
+    else:
+        cols_risk = []
+    if cols_risk and all(c in df_future.columns for c in cols_risk):
+        X_risk = df_future.reindex(columns=cols_risk, fill_value=0)
+        X_risk_s = scaler_risk.transform(X_risk)
+        df_future['risk_proba'] = model_risk.predict(X_risk_s)
+        print("  [OK] Predicciones riesgo generadas.")
+    else:
+        print("  [Adv] Faltan columnas/config risk. 'risk_proba'=0.")
+        df_future['risk_proba'] = 0.0
+
+    df_risk_proba_output = df_future[['ts', 'risk_proba']].copy()
     alertas_json_data = generate_alerts_json(df_per_comuna_anomalies, df_risk_proba_output)
 
     # --- 5. Pipeline Llamadas (Planner iterativo, réplica) ---
@@ -672,7 +642,7 @@ def main(horizonte_dias):
     df_horaria = df_hourly.copy()
     df_horaria = df_horaria.rename(columns={"calls":"llamadas_hora", "tmo_s":"tmo_hora", "agentes":"agentes_requeridos"})
     df_horaria = df_horaria.reset_index().rename(columns={"index":"ts"})
-    df_horaria["ts"] = pd.to_datetime(df_horaria["ts"]).dt.strftime('%Y-%m-%d %H:%M:%S')
+    df_horaria["ts"] = pd.to_datetime(df_horaria["ts"], utc=True).dt.tz_convert(TZ).dt.strftime('%Y-%m-%d %H:%M:%S')
 
     output_path_horaria = os.path.join(PUBLIC_DIR, "prediccion_horaria.json")
     df_horaria.to_json(output_path_horaria, orient='records', indent=2, force_ascii=False)
@@ -680,7 +650,7 @@ def main(horizonte_dias):
 
     # Diario (suma llamadas, promedio TMO ponderado por llamadas)
     df_tmp = df_hourly.copy()
-    idx_tz = pd.DatetimeIndex(df_tmp.index).tz_convert(TZ)
+    idx_tz = pd.to_datetime(df_tmp.index, utc=True).tz_convert(TZ)
     df_tmp["fecha"] = idx_tz.date
     df_tmp["tmo_ponderado_num"] = df_tmp["tmo_s"] * df_tmp["calls"]
 
