@@ -78,10 +78,8 @@ def add_time_features(df):
 # --- AJUSTE v29.3: Corrección KeyError 'dias_desde_feriado' ---
 def add_holiday_distance_features(df, holidays_set):
     df_copy = df.copy()
-    
-    # Crear la clave de merge (solo fecha) en el df principal
     df_copy['merge_date'] = pd.to_datetime(df_copy["ts"].dt.date)
-    
+
     if holidays_set is None or not holidays_set:
         df_copy["dias_desde_feriado"] = 99
         df_copy["dias_hasta_feriado"] = 99
@@ -90,12 +88,14 @@ def add_holiday_distance_features(df, holidays_set):
         return df_copy
     
     holidays_dates = pd.to_datetime(list(holidays_set))
-    
-    # Crear tabla lookup solo con fechas únicas
     unique_dates_in_df = df_copy['merge_date'].unique()
-    if len(unique_dates_in_df) == 0: # Caso borde
-        df_copy["dias_desde_feriado"] = 99; df_copy["dias_hasta_feriado"] = 99; df_copy["es_pre_feriado"] = 0
-        df_copy.drop(columns=['merge_date'], inplace=True, errors='ignore'); return df_copy
+    
+    if len(unique_dates_in_df) == 0:
+        df_copy["dias_desde_feriado"] = 99
+        df_copy["dias_hasta_feriado"] = 99
+        df_copy["es_pre_feriado"] = 0
+        df_copy.drop(columns=['merge_date'], inplace=True, errors='ignore')
+        return df_copy
         
     all_dates = pd.DataFrame(unique_dates_in_df, columns=["date"]).set_index("date")
     all_dates["es_feriado"] = all_dates.index.isin(holidays_dates)
@@ -123,7 +123,7 @@ def add_holiday_distance_features(df, holidays_set):
     
     df_copy.drop(columns=['merge_date', 'date'], inplace=True, errors='ignore')
     
-    # Fillna ahora es seguro (o redundante, pero no daña)
+    # Fillna ahora es seguro porque las columnas existen
     df_copy["dias_desde_feriado"].fillna(99, inplace=True)
     df_copy["dias_hasta_feriado"].fillna(99, inplace=True)
     df_copy["es_pre_feriado"] = (df_copy["dias_hasta_feriado"] == 1).astype(int)
