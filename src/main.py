@@ -78,39 +78,41 @@ def add_time_features(df):
 # --- AJUSTE v29.3: Corrección KeyError 'dias_desde_feriado' ---
 def add_holiday_distance_features(df, holidays_set):
     df_copy = df.copy()
-    if holidays_set is None or not holidays_set:
-        df_copy["dias_desde_feriado"] = 99
-        df_copy["dias_hasta_feriado"] = 99
-        df_copy["es_pre_feriado"] = 0
-        return df_copy
     
+    # Crear la clave de merge (solo fecha) en el df principal
     df_copy['merge_date'] = pd.to_datetime(df_copy["ts"].dt.date)
-    holidays_dates = pd.to_datetime(list(holidays_set))
     
-    unique_dates_in_df = df_copy['merge_date'].unique()
-    if len(unique_dates_in_df) == 0:
+    if holidays_set is None or not holidays_set:
         df_copy["dias_desde_feriado"] = 99
         df_copy["dias_hasta_feriado"] = 99
         df_copy["es_pre_feriado"] = 0
         df_copy.drop(columns=['merge_date'], inplace=True, errors='ignore')
         return df_copy
+    
+    holidays_dates = pd.to_datetime(list(holidays_set))
+    
+    # Crear tabla lookup solo con fechas únicas
+    unique_dates_in_df = df_copy['merge_date'].unique()
+    if len(unique_dates_in_df) == 0: # Caso borde
+        df_copy["dias_desde_feriado"] = 99; df_copy["dias_hasta_feriado"] = 99; df_copy["es_pre_feriado"] = 0
+        df_copy.drop(columns=['merge_date'], inplace=True, errors='ignore'); return df_copy
         
     all_dates = pd.DataFrame(unique_dates_in_df, columns=["date"]).set_index("date")
     all_dates["es_feriado"] = all_dates.index.isin(holidays_dates)
     
     # --- INICIO CORRECCIÓN ---
-    # Asegurar que las columnas existan ANTES del 'if'
+    # Asegurar que las columnas existan ANTES del 'if' con el valor default
     all_dates["dias_desde_feriado"] = 99
     all_dates["dias_hasta_feriado"] = 99
     
     if all_dates["es_feriado"].any():
         # Calcular y sobrescribir
-        all_dates["dias_desde_feriado"] = (~all_dates["es_feriado"]).cumsum()
-        all_dates["dias_desde_feriado"] = all_dates.groupby(all_dates["es_feriado"].cumsum())["dias_desde_feriado"].cumcount()
+        all_dates_desde = (~all_dates["es_feriado"]).cumsum()
+        all_dates["dias_desde_feriado"] = all_dates.groupby(all_dates_desde)["dias_desde_feriado"].cumcount()
         
         all_dates_rev = all_dates.iloc[::-1]
-        all_dates_rev["dias_hasta_feriado"] = (~all_dates_rev["es_feriado"]).cumsum()
-        all_dates_rev["dias_hasta_feriado"] = all_dates_rev.groupby(all_dates_rev["es_feriado"].cumsum())["dias_hasta_feriado"].cumcount()
+        all_dates_hasta = (~all_dates_rev["es_feriado"]).cumsum()
+        all_dates_rev["dias_hasta_feriado"] = all_dates_rev.groupby(all_dates_hasta)["dias_hasta_feriado"].cumcount()
         all_dates["dias_hasta_feriado"] = all_dates_rev["dias_hasta_feriado"]
     # --- FIN CORRECCIÓN ---
         
@@ -121,7 +123,7 @@ def add_holiday_distance_features(df, holidays_set):
     
     df_copy.drop(columns=['merge_date', 'date'], inplace=True, errors='ignore')
     
-    # Fillna ahora es seguro porque las columnas existen
+    # Fillna ahora es seguro (o redundante, pero no daña)
     df_copy["dias_desde_feriado"].fillna(99, inplace=True)
     df_copy["dias_hasta_feriado"].fillna(99, inplace=True)
     df_copy["es_pre_feriado"] = (df_copy["dias_hasta_feriado"] == 1).astype(int)
@@ -143,7 +145,6 @@ def add_rolling_lag_features(df, target_col=TARGET_CALLS):
     df_copy['ma_lag168_7d'] = df_copy['lag_168'].rolling(window=7*24, min_periods=1).mean()
     return df_copy
 
-# --- Función 'create_all_features' (v29.2) ---
 def create_all_features(df, holidays_set, target_col=TARGET_CALLS):
     """Aplica todas las funciones de features v28 en orden."""
     df = add_time_features(df)
