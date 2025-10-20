@@ -22,10 +22,10 @@ HOSTING_FILE = os.path.join(DATA_DIR, "historical_data.csv"); TMO_FILE = os.path
 TARGET_CALLS = "recibidos_nacional"; TARGET_TMO = "tmo_general"
 
 # Parámetros de Post-Procesamiento (de inferencia_core.py)
-K_MAD_WEEKDAY = 6.0 # Valor de tu script
-K_MAD_WEEKEND = 7.0 # Valor de tu script
-RECALIBRATE_WEEKS = 8 # Semanas para recalibración estacional
-HIST_WINDOW_DAYS = 90 # Ventana de historial para iteración (de inferencia_core.py)
+K_MAD_WEEKDAY = 6.0
+K_MAD_WEEKEND = 7.0
+RECALIBRATE_WEEKS = 8
+HIST_WINDOW_DAYS = 90
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'; warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl'); warnings.filterwarnings('ignore', category=FutureWarning)
 pd.options.mode.chained_assignment = None # default='warn'
@@ -75,26 +75,51 @@ def add_time_features(df):
     df_copy["sin_woy"] = np.sin(2 * np.pi * df_copy["woy"] / 52); df_copy["cos_woy"] = np.cos(2 * np.pi * df_copy["woy"] / 52)
     return df_copy
 
-# --- Corrección v29.1 (KeyError: 'key_0') ---
+# --- AJUSTE v29.3: Corrección KeyError: 'dias_desde_feriado' ---
 def add_holiday_distance_features(df, holidays_set):
     df_copy = df.copy()
     if holidays_set is None or not holidays_set:
         df_copy["dias_desde_feriado"] = 99; df_copy["dias_hasta_feriado"] = 99; df_copy["es_pre_feriado"] = 0; return df_copy
+    
     df_copy['merge_date'] = pd.to_datetime(df_copy["ts"].dt.date)
     holidays_dates = pd.to_datetime(list(holidays_set))
-    all_dates = pd.DataFrame(df_copy['merge_date'].unique(), columns=["date"]).set_index("date")
+    
+    # Crear tabla lookup solo con fechas únicas
+    unique_dates_in_df = df_copy['merge_date'].unique()
+    if len(unique_dates_in_df) == 0: # Caso borde si df_copy está vacío
+        df_copy["dias_desde_feriado"] = 99; df_copy["dias_hasta_feriado"] = 99; df_copy["es_pre_feriado"] = 0
+        df_copy.drop(columns=['merge_date'], inplace=True, errors='ignore'); return df_copy
+        
+    all_dates = pd.DataFrame(unique_dates_in_df, columns=["date"]).set_index("date")
     all_dates["es_feriado"] = all_dates.index.isin(holidays_dates)
+    
+    # --- INICIO CORRECCIÓN ---
+    # Asegurar que las columnas existan ANTES del 'if'
+    all_dates["dias_desde_feriado"] = 99
+    all_dates["dias_hasta_feriado"] = 99
+    
     if all_dates["es_feriado"].any():
-        all_dates["dias_desde_feriado"] = (~all_dates["es_feriado"]).cumsum(); all_dates["dias_desde_feriado"] = all_dates.groupby(all_dates["es_feriado"].cumsum())["dias_desde_feriado"].cumcount()
-        all_dates_rev = all_dates.iloc[::-1]; all_dates_rev["dias_hasta_feriado"] = (~all_dates_rev["es_feriado"]).cumsum()
-        all_dates_rev["dias_hasta_feriado"] = all_dates_rev.groupby(all_dates_rev["es_feriado"].cumsum())["dias_hasta_feriado"].cumcount(); all_dates["dias_hasta_feriado"] = all_dates_rev["dias_hasta_feriado"]
-    else: all_dates["dias_desde_feriado"] = 99; all_dates["dias_hasta_feriado"] = 99
+        # Sobrescribir con valores calculados
+        all_dates["dias_desde_feriado"] = (~all_dates["es_feriado"]).cumsum()
+        all_dates["dias_desde_feriado"] = all_dates.groupby(all_dates["es_feriado"].cumsum())["dias_desde_feriado"].cumcount()
+        
+        all_dates_rev = all_dates.iloc[::-1]
+        all_dates_rev["dias_hasta_feriado"] = (~all_dates_rev["es_feriado"]).cumsum()
+        all_dates_rev["dias_hasta_feriado"] = all_dates_rev.groupby(all_dates_rev["es_feriado"].cumsum())["dias_hasta_feriado"].cumcount()
+        all_dates["dias_hasta_feriado"] = all_dates_rev["dias_hasta_feriado"]
+    # --- FIN CORRECCIÓN ---
+        
     all_dates.reset_index(inplace=True) 
-    df_copy = pd.merge(df_copy, all_dates[["date", "dias_desde_feriado", "dias_hasta_feriado"]], left_on='merge_date', right_on='date', how="left")
+    
+    df_copy = pd.merge(df_copy, all_dates[["date", "dias_desde_feriado", "dias_hasta_feriado"]],
+                       left_on='merge_date', right_on='date', how="left")
+    
     df_copy.drop(columns=['merge_date', 'date'], inplace=True, errors='ignore')
+    
+    # Fillna ahora es seguro porque las columnas existen
     df_copy["dias_desde_feriado"].fillna(99, inplace=True); df_copy["dias_hasta_feriado"].fillna(99, inplace=True); df_copy["es_pre_feriado"] = (df_copy["dias_hasta_feriado"] == 1).astype(int)
     return df_copy
-# --- Fin Corrección ---
+# --- Fin Ajuste ---
 
 def add_payment_date_features(df):
     df_copy = df.copy()
@@ -111,7 +136,6 @@ def add_rolling_lag_features(df, target_col=TARGET_CALLS):
     df_copy['ma_lag168_7d'] = df_copy['lag_168'].rolling(window=7*24, min_periods=1).mean()
     return df_copy
 
-# --- AJUSTE v29.2: Añadir la función 'create_all_features' ---
 def create_all_features(df, holidays_set, target_col=TARGET_CALLS):
     """Aplica todas las funciones de features v28 en orden."""
     df = add_time_features(df)
@@ -119,8 +143,6 @@ def create_all_features(df, holidays_set, target_col=TARGET_CALLS):
     df = add_payment_date_features(df)
     df = add_rolling_lag_features(df, target_col)
     return df
-# --- FIN AJUSTE ---
-
 # --- FIN FUNCIONES FEATURES ---
 
 def normalize_climate_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -315,7 +337,7 @@ def generate_alerts_json(df_per_comuna, df_risk_proba, proba_threshold=0.5, impa
 # --- FUNCIÓN PRINCIPAL ORQUESTADORA ---
 
 def main(horizonte_dias):
-    print("="*60); print(f"INICIANDO PIPELINE DE INFERENCIA (v_main 29.2 - MLP v28 + Iterativo + Post-Proceso)"); print(f"Zona Horaria: {TZ} | Horizonte: {horizonte_dias} días"); print("="*60) # v29.2
+    print("="*60); print(f"INICIANDO PIPELINE DE INFERENCIA (v_main 29.3 - MLP v28 + Iterativo + Post-Proceso)"); print(f"Zona Horaria: {TZ} | Horizonte: {horizonte_dias} días"); print("="*60) # v29.3
 
     # --- 1. Cargar Modelos y Artefactos (v28) ---
     print("\n--- Fase 1: Cargando Modelos y Artefactos (v28) ---")
@@ -375,7 +397,7 @@ def main(horizonte_dias):
     # --- 5. Pipeline Llamadas (MLP v28 - Predicción Iterativa) ---
     print("\n--- Fase 5: Pipeline de Llamadas (Planificador MLP v28 - Iterativo) ---")
     
-    # --- LÓGICA ITERATIVA (v29.2) ---
+    # --- LÓGICA ITERATIVA (v29.3) ---
     hist_window_start = last_hist_ts - pd.Timedelta(days=HIST_WINDOW_DAYS)
     df_hist_window = df_hosting_processed_for_adjustments[df_hosting_processed_for_adjustments['ts'] >= hist_window_start].copy()
     # Asegurarnos que el historial tenga todas las features v28
