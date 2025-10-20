@@ -22,10 +22,10 @@ HOSTING_FILE = os.path.join(DATA_DIR, "historical_data.csv"); TMO_FILE = os.path
 TARGET_CALLS = "recibidos_nacional"; TARGET_TMO = "tmo_general"
 
 # Parámetros de Post-Procesamiento (de inferencia_core.py)
-K_MAD_WEEKDAY = 6.0
-K_MAD_WEEKEND = 7.0
-RECALIBRATE_WEEKS = 8
-HIST_WINDOW_DAYS = 90
+K_MAD_WEEKDAY = 6.0 # Valor de tu script
+K_MAD_WEEKEND = 7.0 # Valor de tu script
+RECALIBRATE_WEEKS = 8 # Semanas para recalibración estacional
+HIST_WINDOW_DAYS = 90 # Ventana de historial para iteración (de inferencia_core.py)
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'; warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl'); warnings.filterwarnings('ignore', category=FutureWarning)
 pd.options.mode.chained_assignment = None # default='warn'
@@ -75,7 +75,7 @@ def add_time_features(df):
     df_copy["sin_woy"] = np.sin(2 * np.pi * df_copy["woy"] / 52); df_copy["cos_woy"] = np.cos(2 * np.pi * df_copy["woy"] / 52)
     return df_copy
 
-# --- AJUSTE v29.3: Corrección KeyError: 'dias_desde_feriado' ---
+# --- Corrección v29.1 (KeyError: 'key_0') ---
 def add_holiday_distance_features(df, holidays_set):
     df_copy = df.copy()
     if holidays_set is None or not holidays_set:
@@ -99,11 +99,12 @@ def add_holiday_distance_features(df, holidays_set):
     all_dates["dias_hasta_feriado"] = 99
     
     if all_dates["es_feriado"].any():
-        # Sobrescribir con valores calculados
+        # *Then* calculate and overwrite
         all_dates["dias_desde_feriado"] = (~all_dates["es_feriado"]).cumsum()
         all_dates["dias_desde_feriado"] = all_dates.groupby(all_dates["es_feriado"].cumsum())["dias_desde_feriado"].cumcount()
         
         all_dates_rev = all_dates.iloc[::-1]
+        # Need to recalculate 'es_feriado' cumsum for the reversed frame
         all_dates_rev["dias_hasta_feriado"] = (~all_dates_rev["es_feriado"]).cumsum()
         all_dates_rev["dias_hasta_feriado"] = all_dates_rev.groupby(all_dates_rev["es_feriado"].cumsum())["dias_hasta_feriado"].cumcount()
         all_dates["dias_hasta_feriado"] = all_dates_rev["dias_hasta_feriado"]
@@ -119,7 +120,7 @@ def add_holiday_distance_features(df, holidays_set):
     # Fillna ahora es seguro porque las columnas existen
     df_copy["dias_desde_feriado"].fillna(99, inplace=True); df_copy["dias_hasta_feriado"].fillna(99, inplace=True); df_copy["es_pre_feriado"] = (df_copy["dias_hasta_feriado"] == 1).astype(int)
     return df_copy
-# --- Fin Ajuste ---
+# --- Fin Corrección ---
 
 def add_payment_date_features(df):
     df_copy = df.copy()
@@ -136,6 +137,7 @@ def add_rolling_lag_features(df, target_col=TARGET_CALLS):
     df_copy['ma_lag168_7d'] = df_copy['lag_168'].rolling(window=7*24, min_periods=1).mean()
     return df_copy
 
+# --- AJUSTE v29.2: Añadir la función 'create_all_features' ---
 def create_all_features(df, holidays_set, target_col=TARGET_CALLS):
     """Aplica todas las funciones de features v28 en orden."""
     df = add_time_features(df)
@@ -143,6 +145,8 @@ def create_all_features(df, holidays_set, target_col=TARGET_CALLS):
     df = add_payment_date_features(df)
     df = add_rolling_lag_features(df, target_col)
     return df
+# --- FIN AJUSTE ---
+
 # --- FIN FUNCIONES FEATURES ---
 
 def normalize_climate_columns(df: pd.DataFrame) -> pd.DataFrame:
